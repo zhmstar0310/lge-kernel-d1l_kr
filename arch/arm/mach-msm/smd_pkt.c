@@ -902,6 +902,10 @@ int smd_pkt_release(struct inode *inode, struct file *file)
 	D_STATUS("Begin %s on smd_pkt_dev id:%d\n",
 		 __func__, smd_pkt_devp->i);
 
+#ifdef CONFIG_MACH_LGE
+	cancel_work_sync(&smd_pkt_devp->packet_arrival_work);
+#endif
+
 	clean_and_signal(smd_pkt_devp);
 
 	mutex_lock(&smd_pkt_devp->ch_lock);

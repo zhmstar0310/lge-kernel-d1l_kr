@@ -78,6 +78,7 @@ int ftrace_arch_code_modify_post_process(void)
 	return 0;
 }
 
+#if 0
 int ftrace_arch_code_modify_prepare(void)
 {
 	set_kernel_text_rw();
@@ -91,6 +92,7 @@ int ftrace_arch_code_modify_post_process(void)
 	set_kernel_text_ro();
 	return 0;
 }
+#endif
 
 static unsigned long ftrace_call_replace(unsigned long pc, unsigned long addr)
 {

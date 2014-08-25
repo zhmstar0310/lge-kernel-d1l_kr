@@ -349,6 +349,7 @@ void *pil_get(const char *name)
 	struct pil_device *pil;
 	struct pil_device *pil_d;
 	void *retval;
+	int retries = 0;
 
 	if (!name)
 		return NULL;
@@ -369,7 +370,15 @@ void *pil_get(const char *name)
 
 	mutex_lock(&pil->lock);
 	if (!pil->count) {
+	if (!strcmp(pil->desc->name, "wcnss")) {
+		for (retries = 0; retries < 3; retries ++) {			
+			ret = load_image(pil);
+			dev_info(&pil->dev, "WCNSS image load retries : %d ret :%d\n",retries, ret);
+			if (ret == 0) break;
+		}
+	} else {		
 		ret = load_image(pil);
+	}
 		if (ret) {
 			retval = ERR_PTR(ret);
 			goto err_load;

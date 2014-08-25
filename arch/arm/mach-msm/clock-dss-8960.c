@@ -175,6 +175,12 @@ int hdmi_pll_enable(void)
 			timeout_count = 1000;
 			pll_lock_retry--;
 		}
+#ifdef CONFIG_MACH_LGE
+/*                                                
+                                    
+ */
+		mdelay(1);
+#endif
 	}
 
 	if (!ahb_enabled)

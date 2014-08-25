@@ -412,6 +412,21 @@ struct msm_panel_common_pdata {
 	u32 mem_hid;
 	char cont_splash_enabled;
 	char mdp_iommu_split_domain;
+#ifdef CONFIG_LGE_LCD_TUNING
+	/*           
+                                        
+                                    
+  */
+	int (*read_regset)(unsigned long);
+	int (*write_regset)(unsigned long);
+	int (*read_porch)(unsigned long);
+	int (*write_porch)(unsigned long);
+#endif
+	void *power_on_set;
+	void *power_off_set;
+	ssize_t power_on_set_size;
+	ssize_t power_off_set_size;
+	int max_backlight_level;
 };
 
 
@@ -489,6 +504,7 @@ struct msm_fb_platform_data {
 	int (*allow_set_offset)(void);
 	char prim_panel_name[PANEL_NAME_MAX_LEN];
 	char ext_panel_name[PANEL_NAME_MAX_LEN];
+	u32 *porch;
 };
 
 struct msm_hdmi_platform_data {

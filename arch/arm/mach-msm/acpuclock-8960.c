@@ -48,7 +48,13 @@ static struct scalable scalable[] __initdata = {
 		.vreg[VREG_CORE] = { "krait0", 1300000 },
 		.vreg[VREG_MEM]  = { "krait0_mem", 1150000 },
 		.vreg[VREG_DIG]  = { "krait0_dig", 1150000 },
+#ifdef CONFIG_MACH_LGE
+		/*                                                            
+                                     */
+		.vreg[VREG_HFPLL_A] = { "krait0_s8", 2100000 },
+#else
 		.vreg[VREG_HFPLL_A] = { "krait0_s8", 2050000 },
+#endif
 		.vreg[VREG_HFPLL_B] = { "krait0_l23", 1800000 },
 	},
 	[CPU1] = {
@@ -59,7 +65,13 @@ static struct scalable scalable[] __initdata = {
 		.vreg[VREG_CORE] = { "krait1", 1300000 },
 		.vreg[VREG_MEM]  = { "krait1_mem", 1150000 },
 		.vreg[VREG_DIG]  = { "krait1_dig", 1150000 },
+#ifdef CONFIG_MACH_LGE
+		/*                                                            
+                                     */
+		.vreg[VREG_HFPLL_A] = { "krait1_s8", 2100000 },
+#else
 		.vreg[VREG_HFPLL_A] = { "krait1_s8", 2050000 },
+#endif
 		.vreg[VREG_HFPLL_B] = { "krait1_l23", 1800000 },
 	},
 	[L2] = {
@@ -67,7 +79,13 @@ static struct scalable scalable[] __initdata = {
 		.aux_clk_sel_phys = 0x02011028,
 		.aux_clk_sel = 3,
 		.l2cpmr_iaddr = 0x0500,
+#ifdef CONFIG_MACH_LGE
+		/*                                                            
+                                     */
+		.vreg[VREG_HFPLL_A] = { "l2_s8", 2100000 },
+#else
 		.vreg[VREG_HFPLL_A] = { "l2_s8", 2050000 },
+#endif
 		.vreg[VREG_HFPLL_B] = { "l2_l23", 1800000 },
 	},
 };

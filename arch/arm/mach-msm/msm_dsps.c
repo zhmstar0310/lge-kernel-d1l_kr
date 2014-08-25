@@ -44,6 +44,10 @@
 #include "ramdump.h"
 #include "timer.h"
 
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+#include <mach/restart.h>
+#include <mach/board_lge.h>
+#endif
 #define DRV_NAME	"msm_dsps"
 #define DRV_VERSION	"4.02"
 
@@ -734,6 +738,10 @@ static void dsps_restart_handler(void)
 	if (atomic_add_return(1, &drv->crash_in_progress) > 1) {
 		pr_err("%s: DSPS already resetting. Count %d\n", __func__,
 		       atomic_read(&drv->crash_in_progress));
+#if defined(CONFIG_LGE_HANDLE_PANIC)
+		lge_set_magic_for_subsystem("dsps");
+		msm_set_restart_mode(0x6d633130);
+#endif
 	} else {
 		subsystem_restart("dsps");
 	}
