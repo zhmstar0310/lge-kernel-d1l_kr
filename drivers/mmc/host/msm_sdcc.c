@@ -55,6 +55,18 @@
 #include <mach/dma.h>
 #include <mach/sdio_al.h>
 #include <mach/mpm.h>
+
+#ifdef CONFIG_MACH_LGE
+	/*           
+                                                             
+                           
+                            
+ */
+	#if defined(CONFIG_MACH_MSM8960_L_DCM)
+	#include <mach/board_lge.h>
+	#endif
+#endif
+
 #include <mach/msm_bus.h>
 
 #include "msm_sdcc.h"
@@ -1555,6 +1567,19 @@ msmsdcc_pio_irq(int irq, void *dev_id)
 
 		if (!msmsdcc_sg_next(host, &buffer, &remain))
 			break;
+
+#ifdef CONFIG_MACH_LGE
+		/*           
+                                                           
+                                  
+  */
+		if(!host->curr.data)
+		{
+			writel(0, base + MMCIMASK1);
+			spin_unlock(&host->lock);
+			return IRQ_HANDLED;
+		}
+#endif
 
 		len = 0;
 		if (status & MCI_RXACTIVE)
@@ -4088,6 +4113,14 @@ msmsdcc_check_status(unsigned long data)
 		else
 			status = msmsdcc_slot_status(host);
 
+#ifdef CONFIG_MACH_LGE
+		/*           
+                
+                                  
+  */
+		printk(KERN_INFO "[LGE][MMC][%-18s( )] slot_status:%d, host->oldstat:%d, host->eject:%d\n", __func__, status, host->oldstat, host->eject);
+#endif 
+		
 		host->eject = !status;
 
 		if (status ^ host->oldstat) {
@@ -4120,6 +4153,14 @@ static irqreturn_t
 msmsdcc_platform_status_irq(int irq, void *dev_id)
 {
 	struct msmsdcc_host *host = dev_id;
+
+#ifdef CONFIG_MACH_LGE
+	/*           
+               
+                                 
+ */
+	printk(KERN_INFO "[LGE][MMC][%-18s( )] irq:%d\n", __func__, irq);
+#endif
 
 	pr_debug("%s: %d\n", __func__, irq);
 	msmsdcc_check_status((unsigned long) host);
@@ -5354,7 +5395,24 @@ msmsdcc_probe(struct platform_device *pdev)
 	mmc->pm_caps |= MMC_PM_KEEP_POWER | MMC_PM_WAKE_SDIO_IRQ;
 	mmc->caps |= plat->mmc_bus_width;
 	mmc->caps |= MMC_CAP_MMC_HIGHSPEED | MMC_CAP_SD_HIGHSPEED;
+#ifdef CONFIG_MACH_LGE
+	/*           
+                                                             
+                           
+                            
+ */
+	#if defined(CONFIG_MACH_MSM8960_L_DCM)
+		if (lge_get_board_revno() >= HW_REV_D) {
+			mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY | MMC_CAP_ERASE;
+		} else {
+			mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY;
+		}
+	#else
+		mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY | MMC_CAP_ERASE;
+	#endif
+#else
 	mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY | MMC_CAP_ERASE;
+#endif
 	mmc->caps |= MMC_CAP_HW_RESET;
 	/*
 	 * If we send the CMD23 before multi block write/read command
@@ -5386,7 +5444,16 @@ msmsdcc_probe(struct platform_device *pdev)
 		mmc->caps |= MMC_CAP_NONREMOVABLE;
 	mmc->caps |= MMC_CAP_SDIO_IRQ;
 
+	#ifdef CONFIG_LGE_MMC_BKOPS_DISABLE
+		/*           
+                                                                             
+                                                    
+                                  
+  */
+		/* D1LV(VS930) do nothing for BKOPS */
+	#else
 	mmc->caps2 |= MMC_CAP2_INIT_BKOPS | MMC_CAP2_BKOPS;
+	#endif
 
 	if (plat->is_sdio_al_client)
 		mmc->pm_flags |= MMC_PM_IGNORE_PM_NOTIFY;

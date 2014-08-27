@@ -24,6 +24,7 @@
 #include <linux/mfd/pm8xxx/pm8921.h>
 #include <linux/mfd/pm8xxx/core.h>
 #include <linux/mfd/pm8xxx/regulator.h>
+#include <linux/mfd/pm8xxx/direct_qcoin.h>
 #include <linux/leds-pm8xxx.h>
 
 #define REG_HWREV		0x002  /* PMIC4 revision */
@@ -802,6 +803,18 @@ pm8921_add_subdevices(const struct pm8921_platform_data *pdata,
 			}
 		}
 	}
+
+       if (pdata->pm8xxx_qcoin_pdata) {
+               vibrator_cell.platform_data = pdata->pm8xxx_qcoin_pdata;
+               vibrator_cell.pdata_size =
+                               sizeof(struct direct_qcoin_platform_data);
+               ret = mfd_add_devices(pmic->dev, 0, &vibrator_cell, 1, NULL, 0);
+               if (ret) {
+                       pr_err("Failed to add vibrator subdevice ret=%d\n",
+                                                                       ret);
+                       goto bail;
+               }
+       }
 
 	if (pdata->ccadc_pdata) {
 		ccadc_cell.platform_data = pdata->ccadc_pdata;

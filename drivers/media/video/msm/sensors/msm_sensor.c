@@ -351,7 +351,7 @@ int32_t msm_sensor_release(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	long fps = 0;
 	uint32_t delay = 0;
-	CDBG("%s called\n", __func__);
+	printk("%s called\n", __func__); /*                                                                */
 	s_ctrl->func_tbl->sensor_stop_stream(s_ctrl);
 	if (s_ctrl->curr_res != MSM_SENSOR_INVALID_RES) {
 		fps = s_ctrl->msm_sensor_reg->
@@ -398,6 +398,16 @@ int32_t msm_sensor_get_csi_params(struct msm_sensor_ctrl_t *s_ctrl,
 	sensor_output_info->csid_core = s_ctrl->sensordata->
 			pdata[0].csid_core;
 	sensor_output_info->csid_version = s_ctrl->csid_version;
+
+	//                                      
+			CDBG("%s : csi_lane_assign = 0x%x, csi_lane_mask = 0x%x,csi_if = 0x%x, csid_core = 0x%x, csid_version = = 0x%x\n", __func__,
+			s_ctrl->sensordata->sensor_platform_info->csi_lane_params->csi_lane_assign,
+			s_ctrl->sensordata->sensor_platform_info->csi_lane_params->csi_lane_mask,
+			s_ctrl->sensordata->csi_if,
+			s_ctrl->sensordata->pdata[0].csid_core,
+			s_ctrl->csid_version); 			
+	//                                      
+	
 	return 0;
 }
 
@@ -410,7 +420,7 @@ int32_t msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 		sizeof(struct sensor_cfg_data)))
 		return -EFAULT;
 	mutex_lock(s_ctrl->msm_sensor_mutex);
-	CDBG("msm_sensor_config: cfgtype = %d\n",
+	printk("msm_sensor_config: cfgtype = %d\n", /*                                                                */
 	cdata.cfgtype);
 		switch (cdata.cfgtype) {
 		case CFG_SET_FPS:
@@ -469,8 +479,41 @@ int32_t msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 					cdata.rs);
 			break;
 
+//                                      
+// for YUV sensor[JB]
+#ifdef CONFIG_MACH_LGE
+		case CFG_SET_WB:
+			rc = s_ctrl->func_tbl->
+				sensor_set_wb(
+					s_ctrl,
+					cdata.cfg.wb_val);
+			break;
+
+		case CFG_SET_EFFECT:
+			rc = s_ctrl->func_tbl->
+				sensor_set_effect(
+					s_ctrl,
+					cdata.cfg.effect);
+			break;
+
+		case CFG_SET_BRIGHTNESS:
+			rc = s_ctrl->func_tbl->
+				sensor_set_brightness(
+					s_ctrl,
+					cdata.cfg.brightness);
+			break;
+		case CFG_SET_SOC_FPS:
+			rc = s_ctrl->func_tbl->
+				sensor_set_soc_minmax_fps(
+					s_ctrl,
+					cdata.cfg.fps_range.minfps,
+					cdata.cfg.fps_range.maxfps);
+			break;
+#else
 		case CFG_SET_EFFECT:
 			break;
+#endif
+//                                      
 
 		case CFG_SENSOR_INIT:
 			if (s_ctrl->func_tbl->
@@ -502,6 +545,23 @@ int32_t msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 				rc = -EFAULT;
 			break;
 
+		//Start :randy@qualcomm.com for calibration 2012.03.25
+		case CFG_GET_CALIB_DATA:
+			if (s_ctrl->func_tbl->sensor_get_eeprom_data
+				== NULL) {
+				rc = -EFAULT;
+				break;
+			}
+			rc = s_ctrl->func_tbl->sensor_get_eeprom_data(
+				s_ctrl,
+				&cdata);
+
+			if (copy_to_user((void *)argp,
+				&cdata,
+				sizeof(cdata)))
+				rc = -EFAULT;
+			break;
+		//End :randy@qualcomm.com for calibration 2012.03.25
 		case CFG_START_STREAM:
 			if (s_ctrl->func_tbl->sensor_start_stream == NULL) {
 				rc = -EFAULT;
@@ -572,6 +632,7 @@ int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 	int32_t rc = 0;
 	struct msm_camera_sensor_info *data = s_ctrl->sensordata;
 	CDBG("%s: %d\n", __func__, __LINE__);
+	pr_err("%s: E: %s\n", __func__, data->sensor_name); /*                                                              */
 	s_ctrl->reg_ptr = kzalloc(sizeof(struct regulator *)
 			* data->sensor_platform_info->num_vreg, GFP_KERNEL);
 	if (!s_ctrl->reg_ptr) {
@@ -628,6 +689,8 @@ int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 		data->sensor_platform_info->i2c_conf->use_i2c_mux)
 		msm_sensor_enable_i2c_mux(data->sensor_platform_info->i2c_conf);
 
+	pr_err("%s: X\n", __func__); /*                                                              */
+
 	return rc;
 
 enable_clk_failed:
@@ -654,6 +717,7 @@ int32_t msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	struct msm_camera_sensor_info *data = s_ctrl->sensordata;
 	CDBG("%s\n", __func__);
+	pr_err("%s: E: %s\n", __func__, data->sensor_name); /*                                                              */
 	if (data->sensor_platform_info->i2c_conf &&
 		data->sensor_platform_info->i2c_conf->use_i2c_mux)
 		msm_sensor_disable_i2c_mux(
@@ -674,6 +738,7 @@ int32_t msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 		s_ctrl->reg_ptr, 0);
 	msm_camera_request_gpio_table(data, 0);
 	kfree(s_ctrl->reg_ptr);
+	pr_err("%s: X\n", __func__); /*                                                              */
 	return 0;
 }
 
@@ -709,7 +774,7 @@ int32_t msm_sensor_i2c_probe(struct i2c_client *client,
 {
 	int rc = 0;
 	struct msm_sensor_ctrl_t *s_ctrl;
-	CDBG("%s %s_i2c_probe called\n", __func__, client->name);
+	printk("%s_i2c_probe called\n", client->name); /*                                                                */
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		pr_err("%s %s i2c_check_functionality failed\n",
 			__func__, client->name);

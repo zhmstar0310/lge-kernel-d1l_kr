@@ -142,6 +142,10 @@ struct pm8xxx_adc {
 	uint32_t				mpp_base;
 	struct device				*hwmon;
 	struct wake_lock			adc_wakelock;
+#ifdef CONFIG_LGE_PM
+	/* 120422 mansu.lee add adc fail workaround wake lock */
+	struct wake_lock			adc_workaround_wakelock;
+#endif
 	int					msm_suspend_check;
 	struct pm8xxx_adc_amux_properties	*conv;
 	struct pm8xxx_adc_arb_btm_param		batt;
@@ -686,7 +690,11 @@ uint32_t pm8xxx_adc_read(enum pm8xxx_adc_channels channel,
 	}
 
 	mutex_lock(&adc_pmic->adc_lock);
-
+#ifdef CONFIG_LGE_PM
+	/*                                                            */
+	wake_lock(&adc_pmic->adc_workaround_wakelock);
+	/*                          */
+#endif
 	for (i = 0; i < adc_pmic->adc_num_board_channel; i++) {
 		if (channel == adc_pmic->adc_channel[i].channel_name)
 			break;
@@ -734,7 +742,30 @@ uint32_t pm8xxx_adc_read(enum pm8xxx_adc_channels channel,
 		goto fail;
 	}
 
+#ifdef CONFIG_LGE_PM
+	rc = wait_for_completion_timeout(&adc_pmic->adc_rslt_completion,
+			msecs_to_jiffies(3000));
+	if (!rc) {
+		u8 data_arb_usrp_cntrl1;
+
+		/* time expire */
+		pr_info("%s: [LGE_PM] pmic adc read timeout at channel[%d]\n", __func__, channel);
+
+		rc = pm8xxx_adc_read_reg(PM8XXX_ADC_ARB_USRP_CNTRL1, &data_arb_usrp_cntrl1);
+		if (rc) {
+			pr_info("%s: pm8xxx_adc_read_reg(PM8XXX_ADC_ARB_USRP_CNTRL1) error, rc=%d\n", __func__, rc);
+			rc = -EINVAL;
+			goto fail;
+		}
+		else
+			pr_info("%s: pm8xxx_adc_read_reg(PM8XXX_ADC_ARB_USRP_CNTRL1) = %d, rc=%d\n", __func__, data_arb_usrp_cntrl1, rc);
+
+		rc = -ETIMEDOUT;
+		goto fail;
+	}
+#else
 	wait_for_completion(&adc_pmic->adc_rslt_completion);
+#endif
 
 	rc = pm8xxx_adc_read_adc_code(&result->adc_code);
 	if (rc) {
@@ -756,7 +787,11 @@ uint32_t pm8xxx_adc_read(enum pm8xxx_adc_channels channel,
 		rc = -EINVAL;
 		goto fail_unlock;
 	}
-
+#ifdef CONFIG_LGE_PM
+	/*                                                            */
+	wake_unlock(&adc_pmic->adc_workaround_wakelock);
+	/*                          */
+#endif
 	mutex_unlock(&adc_pmic->adc_lock);
 
 	return 0;
@@ -765,6 +800,11 @@ fail:
 	if (rc_fail)
 		pr_err("pm8xxx adc power disable failed\n");
 fail_unlock:
+#ifdef CONFIG_LGE_PM
+	/*                                                            */
+	wake_unlock(&adc_pmic->adc_workaround_wakelock);
+	/*                          */
+#endif
 	mutex_unlock(&adc_pmic->adc_lock);
 	pr_err("pm8xxx adc error with %d\n", rc);
 	return rc;
@@ -1238,6 +1278,12 @@ static int __devinit pm8xxx_adc_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, adc_pmic);
 	wake_lock_init(&adc_pmic->adc_wakelock, WAKE_LOCK_SUSPEND,
 					"pm8xxx_adc_wakelock");
+#ifdef CONFIG_LGE_PM
+	/*                                                            */
+	wake_lock_init(&adc_pmic->adc_workaround_wakelock, WAKE_LOCK_SUSPEND,
+					"pm8xxx_adc_workaround");
+	/*                          */
+#endif
 	adc_pmic->msm_suspend_check = 0;
 	pmic_adc = adc_pmic;
 

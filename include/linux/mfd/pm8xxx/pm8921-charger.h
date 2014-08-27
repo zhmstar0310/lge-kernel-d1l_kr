@@ -56,6 +56,17 @@ enum pm8921_chg_led_src_config {
 	LED_SRC_BYPASS,
 };
 
+/*           
+                                    
+                                
+*/
+
+typedef enum{
+	IUSB_REDUCE_METHOD = 0,
+	IUSB_USE_FOR_ISYSTEM_METHOD,
+} xo_mitigation_way;
+/*                               */
+
 /**
  * struct pm8921_charger_platform_data -
  * @safety_time:	max charging time in minutes incl. fast and trkl
@@ -151,8 +162,27 @@ struct pm8921_charger_platform_data {
 	int				vin_min;
 	int				*thermal_mitigation;
 	int				thermal_levels;
+/*                                                                          */
+#ifdef CONFIG_LGE_CHARGER_TEMP_SCENARIO
+	int				temp_level_1;
+	int				temp_level_2;
+	int				temp_level_3;
+	int				temp_level_4;
+	int				temp_level_5;
+	/*           
+                                    
+                                
+*/
+	xo_mitigation_way thermal_mitigation_method;
+/*                               */
+#endif
+/*                                       */
 	enum pm8921_chg_cold_thr	cold_thr;
 	enum pm8921_chg_hot_thr		hot_thr;
+#ifdef CONFIG_MACH_LGE
+	int batt_id_gpio;			/* No. of msm gpio for battery id */
+	int batt_id_pu_gpio;		/* No. of msm gpio for battery id pull up */
+#endif
 	int				rconn_mohm;
 	enum pm8921_chg_led_src_config	led_src_config;
 };
@@ -167,6 +197,11 @@ enum pm8921_charger_source {
 void pm8921_charger_vbus_draw(unsigned int mA);
 int pm8921_charger_register_vbus_sn(void (*callback)(int));
 void pm8921_charger_unregister_vbus_sn(void (*callback)(int));
+/*                                                          */
+#ifdef CONFIG_LGE_PM
+extern int pm8921_charger_is_ta_connected(void);
+#endif
+/*                          */
 /**
  * pm8921_charger_enable -
  *
@@ -283,6 +318,10 @@ int pm8921_usb_ovp_set_hystersis(enum pm8921_usb_debounce_time ms);
  *
  */
 int pm8921_usb_ovp_disable(int disable);
+#ifdef CONFIG_LGE_PM
+void pm8921_charger_force_update_batt_psy(void);
+#endif
+
 /**
  * pm8921_is_batfet_closed - battery fet status
  *
@@ -350,6 +389,11 @@ static inline int pm8921_batt_temperature(void)
 {
 	return -ENXIO;
 }
+#ifdef CONFIG_LGE_PM
+static inline void pm8921_charger_force_update_batt_psy(void)
+{
+}
+#endif
 static inline int pm8921_usb_ovp_set_threshold(enum pm8921_usb_ov_threshold ov)
 {
 	return -ENXIO;

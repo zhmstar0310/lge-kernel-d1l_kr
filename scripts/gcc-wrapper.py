@@ -43,6 +43,8 @@ allowed_warnings = set([
     "alignment.c:327",
     "mmu.c:602",
     "return_address.c:62",
+    "trace_events_filter.c:2074",
+    "non-atomic.h:105",
  ])
 
 # Capture the name of the object file, can find it.

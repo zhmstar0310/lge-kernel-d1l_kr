@@ -31,6 +31,13 @@ enum msm_cam_flash_stat{
 	MSM_CAM_FLASH_ON,
 };
 
+/*           
+                                 
+ */
+#ifdef CONFIG_MSM_CAMERA_FLASH_LM3559
+extern int lm3559_flash_set_led_state(int state);
+#endif
+
 static struct i2c_client *sc628a_client;
 
 static int32_t flash_i2c_txdata(struct i2c_client *client,
@@ -762,8 +769,17 @@ int msm_flash_ctrl(struct msm_camera_sensor_info *sdata,
 	sensor_data = sdata;
 	switch (flash_info->flashtype) {
 	case LED_FLASH:
+/*           
+                  
+                                 
+ */
+#ifdef CONFIG_MSM_CAMERA_FLASH_LM3559
+		rc = lm3559_flash_set_led_state(flash_info->ctrl_data.led_state);
+		CDBG("%s: lm3559_flash_set_led_state rc = %d\n", __func__, rc);
+#else
 		rc = msm_camera_flash_set_led_state(sdata->flash_data,
 			flash_info->ctrl_data.led_state);
+#endif
 			break;
 	case STROBE_FLASH:
 		rc = msm_strobe_flash_ctrl(sdata->strobe_flash_data,

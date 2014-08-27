@@ -2514,6 +2514,17 @@ static unsigned int msm_poll_config(struct file *fp,
 	return rc;
 }
 
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
+int get_server_use_count(void) 
+{ 
+ int server_count; 
+ mutex_lock(&g_server_dev.server_lock); 
+ server_count = g_server_dev.use_count; 
+ mutex_unlock(&g_server_dev.server_lock); 
+ return server_count; 
+} 
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
+
 static int msm_close_server(struct file *fp)
 {
 	struct v4l2_event_subscription sub;
@@ -2526,7 +2537,19 @@ static int msm_close_server(struct file *fp)
 		mutex_lock(&g_server_dev.server_lock);
 		if (g_server_dev.pcam_active) {
 			struct v4l2_event v4l2_ev;
+			
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+			mutex_lock(&g_server_dev.
+				pcam_active->vid_lock);
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+
 			msm_cam_stop_hardware(g_server_dev.pcam_active);
+
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+			mutex_unlock(&g_server_dev.
+				pcam_active->vid_lock);
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+			
 			v4l2_ev.type = V4L2_EVENT_PRIVATE_START
 				+ MSM_CAM_APP_NOTIFY_ERROR_EVENT;
 			v4l2_ev.id = 0;
@@ -3048,6 +3071,19 @@ static void msm_cam_server_subdev_notify(struct v4l2_subdev *sd,
 		rc = v4l2_subdev_call(g_server_dev.gesture_device,
 			core, ioctl, VIDIOC_MSM_GESTURE_CAM_EVT, arg);
 		break;
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim		
+	//case NOTIFY_VFE_CAMIF_ERROR: {
+	case NOTIFY_VFE_ERROR: {
+		struct v4l2_event v4l2_ev;
+		pr_err("%s Got VFE_ERROR", __func__);
+		v4l2_ev.type = V4L2_EVENT_PRIVATE_START
+			+ MSM_CAM_APP_NOTIFY_ERROR_EVENT;
+		ktime_get_ts(&v4l2_ev.timestamp);
+		v4l2_event_queue(
+			g_server_dev.pcam_active->pvdev, &v4l2_ev);
+		break;
+	}
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
 	default:
 		break;
 	}

@@ -294,6 +294,19 @@ void mmc_start_bkops(struct mmc_card *card)
 	BUG_ON(!card);
 	if (!card->ext_csd.bkops_en || !(card->host->caps2 & MMC_CAP2_BKOPS))
 		return;
+	#ifdef CONFIG_LGE_MMC_BKOPS_DISABLE
+		/*           
+                                                                             
+                                                    
+                                  
+  */
+	else {
+		printk(KERN_INFO "[LGE][MMC][%-18s( )]=======================================\n", __func__);
+		printk(KERN_INFO "[LGE][MMC][%-18s( )] BKOPS ENABLED!, bkops_en:%d, caps2:%d\n", __func__, card->ext_csd.bkops_en, card->host->caps2 & MMC_CAP2_BKOPS);
+		printk(KERN_INFO "[LGE][MMC][%-18s( )] This must not be printed! If you see this log, call warkap.seo@lge.com\n", __func__);
+		printk(KERN_INFO "[LGE][MMC][%-18s( )]=======================================\n", __func__);
+	}
+	#endif
 
 	if (mmc_card_check_bkops(card)) {
 		spin_lock_irqsave(&card->host->lock, flags);
@@ -698,9 +711,19 @@ void mmc_set_data_timeout(struct mmc_data *data, const struct mmc_card *card)
 			 * previous value of 300ms is known to be
 			 * insufficient for some cards.
 			 */
-			limit_us = 3000000;
+			limit_us = 3500000;
 		else
+			#ifdef CONFIG_MACH_LGE
+			/*           
+                                              
+                                                                         
+                                        
+                                                 
+    */
+			limit_us = 300000;
+			#else
 			limit_us = 100000;
+			#endif
 
 		/*
 		 * SDHC cards always use these fixed values.
@@ -1311,7 +1334,16 @@ void mmc_power_up(struct mmc_host *host)
 	 * This delay should be sufficient to allow the power supply
 	 * to reach the minimum voltage.
 	 */
+
+#ifdef CONFIG_MACH_LGE
+	/*           
+                                              
+                                  
+ */
+	mmc_delay(20);
+#else
 	mmc_delay(10);
+#endif
 
 	host->ios.clock = host->f_init;
 
@@ -1322,7 +1354,15 @@ void mmc_power_up(struct mmc_host *host)
 	 * This delay must be at least 74 clock sizes, or 1 ms, or the
 	 * time required to reach a stable voltage.
 	 */
+#ifdef CONFIG_MACH_LGE
+	/*           
+                                              
+                                  
+ */
+	mmc_delay(20);
+#else
 	mmc_delay(10);
+#endif
 
 	mmc_host_clk_release(host);
 }
@@ -1717,7 +1757,22 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 
 	memset(&cmd, 0, sizeof(struct mmc_command));
 	cmd.opcode = MMC_ERASE;
+	#ifdef CONFIG_LGE_MMC_ERASE_TRIM_ARGU_03
+	/*           
+                                                    
+                                                                    
+                                                       
+                           
+                                 
+ */
+	if (mmc_card_sd(card))
+		cmd.arg = arg;
+	else
+		cmd.arg = 0x00000003;
+
+	#else
 	cmd.arg = arg;
+	#endif
 	cmd.flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
 	cmd.cmd_timeout_ms = mmc_erase_timeout(card, arg, qty);
 	err = mmc_wait_for_cmd(card->host, &cmd, 0);
@@ -2175,6 +2230,14 @@ void mmc_rescan(struct work_struct *work)
 	struct mmc_host *host =
 		container_of(work, struct mmc_host, detect.work);
 	bool extend_wakelock = false;
+
+#ifdef CONFIG_MACH_LGE
+	/*           
+               
+                                 
+ */
+	printk(KERN_INFO "[LGE][MMC][%-18s( ) START!] \n", __func__);
+#endif
 
 	if (host->rescan_disable)
 		return;

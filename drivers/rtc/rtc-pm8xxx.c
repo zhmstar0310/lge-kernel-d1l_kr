@@ -477,6 +477,14 @@ static int __devinit pm8xxx_rtc_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, rtc_dd);
 
+#ifdef CONFIG_MACH_LGE
+	/*           
+                                                              
+                                                 
+                                    
+  */
+	device_init_wakeup(&pdev->dev, 1);
+#endif
 	/* Register the RTC device */
 	rtc_dd->rtc = rtc_device_register("pm8xxx_rtc", &pdev->dev,
 				&pm8xxx_rtc_ops, THIS_MODULE);
@@ -496,7 +504,14 @@ static int __devinit pm8xxx_rtc_probe(struct platform_device *pdev)
 		goto fail_req_irq;
 	}
 
+#ifndef CONFIG_MACH_LGE
+	/*           
+                                                              
+                                                 
+                                    
+  */
 	device_init_wakeup(&pdev->dev, 1);
+#endif
 
 	dev_dbg(&pdev->dev, "Probe success !!\n");
 

@@ -30,6 +30,24 @@
 #include "msm_fb.h"
 #include "hdmi_msm.h"
 
+/*             
+   
+                                  
+                                    
+                                   
+   
+                                  
+ */
+#define LGE_MULTICORE_FASTBOOT
+#if defined(CONFIG_MACH_LGE) && defined(LGE_MULTICORE_FASTBOOT)
+#include <linux/kthread.h>
+#endif
+/*              */
+
+#ifdef CONFIG_LGE_COMPRESSED_PATH
+#include "mach/amas_hdmi.h"
+#endif
+
 /* Supported HDMI Audio channels */
 #define MSM_HDMI_AUDIO_CHANNEL_2		0
 #define MSM_HDMI_AUDIO_CHANNEL_4		1
@@ -50,6 +68,20 @@
 #define MSM_HDMI_SAMPLE_RATE_FORCE_32BIT	0x7FFFFFFF
 
 static int msm_hdmi_sample_rate = MSM_HDMI_SAMPLE_RATE_48KHZ;
+
+#ifdef CONFIG_LGE_COMPRESSED_PATH
+ int msm_hdmi_audio_enble_flag = 0;
+ EXPORT_SYMBOL(msm_hdmi_audio_enble_flag);
+ int msm_compressed_open_select_flag = 0;
+ EXPORT_SYMBOL(msm_compressed_open_select_flag);
+extern int compressed_open_flag;
+#endif
+
+#ifdef CONFIG_LGE_COMPRESSED_PATH
+#ifdef CONFIG_SII8334_MHL_TX
+extern int GetMHLConnectedStatus(void);
+#endif
+#endif
 
 /* HDMI/HDCP Registers */
 #define HDCP_DDC_STATUS		0x0128
@@ -619,19 +651,21 @@ static void hdmi_msm_setup_video_mode_lut(void)
 	HDMI_SETUP_LUT(720x480p60_4_3);
 	HDMI_SETUP_LUT(720x480p60_16_9);
 	HDMI_SETUP_LUT(1280x720p60_16_9);
-	HDMI_SETUP_LUT(1920x1080i60_16_9);
 	HDMI_SETUP_LUT(1440x480i60_4_3);
 	HDMI_SETUP_LUT(1440x480i60_16_9);
-	HDMI_SETUP_LUT(1920x1080p60_16_9);
 	HDMI_SETUP_LUT(720x576p50_4_3);
 	HDMI_SETUP_LUT(720x576p50_16_9);
 	HDMI_SETUP_LUT(1280x720p50_16_9);
 	HDMI_SETUP_LUT(1440x576i50_4_3);
 	HDMI_SETUP_LUT(1440x576i50_16_9);
-	HDMI_SETUP_LUT(1920x1080p50_16_9);
 	HDMI_SETUP_LUT(1920x1080p24_16_9);
 	HDMI_SETUP_LUT(1920x1080p25_16_9);
 	HDMI_SETUP_LUT(1920x1080p30_16_9);
+#ifndef CONFIG_SII8334_MHL_TX
+	HDMI_SETUP_LUT(1920x1080i60_16_9);
+	HDMI_SETUP_LUT(1920x1080p60_16_9);
+	HDMI_SETUP_LUT(1920x1080p50_16_9);
+#endif
 }
 
 #ifdef PORT_DEBUG
@@ -2107,6 +2141,9 @@ static int hdmi_msm_ddc_read(uint32 dev_addr, uint32 offset, uint8 *data_buf,
 	}
 }
 
+#ifdef CONFIG_LGE_COMPRESSED_PATH
+extern unsigned char ext_edid[0x80 * 4];
+#endif
 
 static int hdmi_msm_read_edid_block(int block, uint8 *edid_buf)
 {
@@ -2147,6 +2184,9 @@ static int hdmi_msm_read_edid(void)
 	if (!hdmi_msm_is_power_on()) {
 		DEV_ERR("%s: failed: HDMI power is off", __func__);
 		status = -ENXIO;
+#ifdef CONFIG_LGE_COMPRESSED_PATH
+		memset(ext_edid, 0, 0x80*4);
+#endif
 		goto error;
 	}
 
@@ -3237,6 +3277,11 @@ static void hdmi_msm_audio_acr_setup(boolean enabled, int video_format,
 		/* N_MULTIPLE(multiplier) */
 		acr_pck_ctrl_reg |= (multiplier & 7) << 16;
 
+#ifdef CONFIG_LGE_COMPRESSED_PATH
+		/* set acr_pck_ctrl_reg here */
+		acr_pck_ctrl_reg &= 0xFFFFFF0F;
+#endif
+
 		if ((MSM_HDMI_SAMPLE_RATE_48KHZ == audio_sample_rate) ||
 		    (MSM_HDMI_SAMPLE_RATE_96KHZ == audio_sample_rate) ||
 		    (MSM_HDMI_SAMPLE_RATE_192KHZ == audio_sample_rate)) {
@@ -3603,6 +3648,33 @@ void hdmi_msm_audio_sample_rate_reset(int rate)
 }
 EXPORT_SYMBOL(hdmi_msm_audio_sample_rate_reset);
 
+#ifdef CONFIG_LGE_COMPRESSED_PATH
+
+int hdmi_msm_audio_is_enabled(void)
+{
+	//check hdmi connect status
+#ifdef CONFIG_SII8334_MHL_TX
+	if (!GetMHLConnectedStatus()) {
+		DEV_DBG("MHL is not connected\n");
+		return 0;	
+	}
+#else
+	boolean hpd_state;
+	hpd_state = (HDMI_INP(0x0250) & 0x2) >> 1;
+	if ((external_common_state->hpd_state != hpd_state) || (hdmi_msm_state->hpd_prev_state != external_common_state->hpd_state)) {
+		DEV_DBG("MHL is not connected\n");
+		return 0;	
+	}
+#endif
+	if(msm_compressed_open_select_flag==0) return 0;
+
+	msm_compressed_open_select_flag = 0;
+	return msm_hdmi_audio_enble_flag;
+}
+EXPORT_SYMBOL(hdmi_msm_audio_is_enabled);
+#endif
+
+
 static void hdmi_msm_audio_setup(void)
 {
 	const int channels = MSM_HDMI_AUDIO_CHANNEL_2;
@@ -3622,6 +3694,9 @@ static void hdmi_msm_audio_setup(void)
 	/* Turn on Audio FIFO and SAM DROP ISR */
 	HDMI_OUTP(0x02CC, HDMI_INP(0x02CC) | BIT(1) | BIT(3));
 	DEV_INFO("HDMI Audio: Enabled\n");
+#ifdef CONFIG_LGE_COMPRESSED_PATH
+	msm_hdmi_audio_enble_flag = 1;
+#endif
 }
 
 static int hdmi_msm_audio_off(void)
@@ -3629,6 +3704,9 @@ static int hdmi_msm_audio_off(void)
 	uint32 audio_pkt_ctrl, audio_cfg;
 	 /* Number of wait iterations */
 	int i = 10;
+#ifdef CONFIG_LGE_COMPRESSED_PATH
+	msm_hdmi_audio_enble_flag = 0;
+#endif
 	audio_pkt_ctrl = HDMI_INP_ND(0x0020);
 	audio_cfg = HDMI_INP_ND(0x01D0);
 
@@ -3654,6 +3732,15 @@ static int hdmi_msm_audio_off(void)
 	return 0;
 }
 
+#ifdef CONFIG_LGE_COMPRESSED_PATH
+void hdmi_msm_samplingrate_setting(int sampling_rate)
+{
+	msm_hdmi_sample_rate = sampling_rate;
+
+	hdmi_msm_audio_off();
+	hdmi_msm_audio_setup();
+}
+#endif
 
 static uint8 hdmi_msm_avi_iframe_lut[][16] = {
 /*	480p60	480i60	576p50	576i50	720p60	 720p50	1080p60	1080i60	1080p50
@@ -4393,8 +4480,10 @@ void mhl_connect_api(boolean on)
 		 external_common_state->sdev.state,  __func__);
 	if (on) {
 		hdmi_msm_read_edid();
+#ifdef CONFIG_FB_MSM_HDMI_MSM_PANEL_HDCP_SUPPORT
 		if (hdmi_msm_has_hdcp())
 			hdmi_msm_state->reauth = FALSE ;
+#endif
 		/* Build EDID table */
 		hdmi_msm_turn_on();
 		DEV_INFO("HDMI HPD: CONNECTED: send ONLINE\n");
@@ -4456,6 +4545,77 @@ static int hdmi_msm_power_off(struct platform_device *pdev)
 	hdmi_msm_state->panel_power_on = FALSE;
 	return 0;
 }
+
+/*             
+   
+                                  
+                                    
+                                   
+   
+                                  
+ */
+#if defined(CONFIG_MACH_LGE) && defined(LGE_MULTICORE_FASTBOOT)
+static int hdmi_msm_probe_thread(void *arg)
+{
+	int rc = 0; 
+	
+	if (hdmi_prim_display) {
+		rc = hdmi_msm_hpd_on(true);
+		if (rc)
+			goto error;
+	}
+
+	if (hdmi_msm_has_hdcp()) {
+		/* Don't Set Encryption in case of non HDCP builds */
+		external_common_state->present_hdcp = FALSE;
+#ifdef CONFIG_FB_MSM_HDMI_MSM_PANEL_HDCP_SUPPORT
+		external_common_state->present_hdcp = TRUE;
+#endif
+	} else {
+		external_common_state->present_hdcp = FALSE;
+#ifdef CONFIG_FB_MSM_HDMI_MSM_PANEL_HDCP_SUPPORT
+		/*
+		 * If the device is not hdcp capable do
+		 * not start hdcp timer.
+		 */
+		del_timer(&hdmi_msm_state->hdcp_timer);
+#endif
+	}
+
+	/* Initialize hdmi node and register with switch driver */
+	if (hdmi_prim_display)
+		external_common_state->sdev.name = "hdmi_as_primary";
+	else
+		external_common_state->sdev.name = "hdmi";
+	if (switch_dev_register(&external_common_state->sdev) < 0)
+		DEV_ERR("Hdmi switch registration failed\n");
+
+	return 0;
+error:
+	if (hdmi_msm_state->qfprom_io)
+		iounmap(hdmi_msm_state->qfprom_io);
+	hdmi_msm_state->qfprom_io = NULL;
+
+	if (hdmi_msm_state->hdmi_io)
+		iounmap(hdmi_msm_state->hdmi_io);
+	hdmi_msm_state->hdmi_io = NULL;
+
+	external_common_state_remove();
+
+	if (hdmi_msm_state->hdmi_app_clk)
+		clk_put(hdmi_msm_state->hdmi_app_clk);
+	if (hdmi_msm_state->hdmi_m_pclk)
+		clk_put(hdmi_msm_state->hdmi_m_pclk);
+	if (hdmi_msm_state->hdmi_s_pclk)
+		clk_put(hdmi_msm_state->hdmi_s_pclk);
+
+	hdmi_msm_state->hdmi_app_clk = NULL;
+	hdmi_msm_state->hdmi_m_pclk = NULL;
+	hdmi_msm_state->hdmi_s_pclk = NULL;
+	return -rc;
+}
+#endif /*                                           */
+/*              */
 
 static int __devinit hdmi_msm_probe(struct platform_device *pdev)
 {
@@ -4598,6 +4758,27 @@ static int __devinit hdmi_msm_probe(struct platform_device *pdev)
 	} else
 		DEV_ERR("Init FAILED: failed to add fb device\n");
 
+/*             
+   
+                                  
+                                    
+                                   
+   
+                                  
+ */
+#if defined(CONFIG_MACH_LGE) && defined(LGE_MULTICORE_FASTBOOT)
+	{
+		struct task_struct *th;
+		th = kthread_create(hdmi_msm_probe_thread, NULL, "hdmi_msm_probe");
+		if (IS_ERR(th)) {
+			rc = PTR_ERR(th);
+			goto error;
+		}
+		wake_up_process(th);
+		return 0;
+	}
+#else	/* original */
+/*              */
 	if (hdmi_prim_display) {
 		rc = hdmi_msm_hpd_on(true);
 		if (rc)
@@ -4630,7 +4811,16 @@ static int __devinit hdmi_msm_probe(struct platform_device *pdev)
 		DEV_ERR("Hdmi switch registration failed\n");
 
 	return 0;
-
+/*             
+   
+                                  
+                                    
+                                   
+   
+                                  
+ */
+#endif /*                                           */
+/*              */
 error:
 	if (hdmi_msm_state->qfprom_io)
 		iounmap(hdmi_msm_state->qfprom_io);
@@ -4749,14 +4939,16 @@ static int __init hdmi_msm_init(void)
 	}
 
 	external_common_state = &hdmi_msm_state->common;
-
 	if (hdmi_prim_display && hdmi_prim_resolution)
 		external_common_state->video_resolution =
 			hdmi_prim_resolution - 1;
 	else
 		external_common_state->video_resolution =
+#ifdef CONFIG_SII8334_MHL_TX
+			HDMI_VFRMT_1920x1080p30_16_9;
+#else
 			HDMI_VFRMT_1920x1080p60_16_9;
-
+#endif
 #ifdef CONFIG_FB_MSM_HDMI_3D
 	external_common_state->switch_3d = hdmi_msm_switch_3d;
 #endif

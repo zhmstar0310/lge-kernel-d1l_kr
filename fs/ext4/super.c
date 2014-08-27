@@ -4238,6 +4238,16 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 #endif
 	char *orig_data = kstrdup(data, GFP_KERNEL);
 
+	#ifdef CONFIG_MACH_LGE
+	/*                                      
+                        
+  */
+	if(*flags & MS_RDONLY)
+		ext4_msg(sb, KERN_INFO, "remount start. with ro");
+	else
+		ext4_msg(sb, KERN_INFO, "remount start. with rw");
+	#endif
+
 	/* Store the original options */
 	lock_super(sb);
 	old_sb_flags = sb->s_flags;

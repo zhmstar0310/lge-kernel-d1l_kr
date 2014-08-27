@@ -68,6 +68,11 @@
 
 #include "ci13xxx_udc.h"
 
+#ifdef CONFIG_USB_G_LGE_ANDROID_PFSC
+#include <mach/board_lge.h>
+
+#define PORTSC_PFSC BIT(24)
+#endif
 
 /******************************************************************************
  * DEFINE
@@ -351,6 +356,18 @@ static int hw_device_reset(struct ci13xxx *udc)
 		pr_err("lpm = %i", hw_bank.lpm);
 		return -ENODEV;
 	}
+
+#ifdef CONFIG_USB_G_LGE_ANDROID_PFSC
+	switch(lge_pm_get_cable_type()) {
+		case CABLE_130K:
+			hw_cwrite(CAP_PORTSC, PORTSC_PFSC, PORTSC_PFSC);
+			break;
+		case CABLE_56K:
+		/* fall through */
+		default:
+			break;
+	}
+#endif
 
 	return 0;
 }
@@ -2042,9 +2059,11 @@ __acquires(udc->lock)
 
 	spin_unlock(udc->lock);
 
+#ifndef CONFIG_LGE_PM /* NOT Defined */
 	/*stop charging upon reset */
 	if (udc->transceiver)
 		usb_phy_set_power(udc->transceiver, 0);
+#endif
 
 	retval = _gadget_stop_activity(&udc->gadget);
 	if (retval)
@@ -2474,12 +2493,26 @@ __acquires(udc->lock)
 					err = isr_setup_status_phase(udc);
 					break;
 				case USB_DEVICE_B_HNP_ENABLE:
+#ifdef CONFIG_USB_G_LGE_ANDROID
+					if(udc->gadget.is_otg) {
+						udc->gadget.b_hnp_enable = 1;
+						err = isr_setup_status_phase(udc);
+					}
+#else
 					udc->gadget.b_hnp_enable = 1;
 					err = isr_setup_status_phase(udc);
+#endif
 					break;
 				case USB_DEVICE_A_HNP_SUPPORT:
+#ifdef CONFIG_USB_G_LGE_ANDROID
+					if(udc->gadget.is_otg) {
+						udc->gadget.a_hnp_support = 1;
+						err = isr_setup_status_phase(udc);
+					}
+#else
 					udc->gadget.a_hnp_support = 1;
 					err = isr_setup_status_phase(udc);
+#endif
 					break;
 				case USB_DEVICE_A_ALT_HNP_SUPPORT:
 					break;
@@ -2496,14 +2529,30 @@ __acquires(udc->lock)
 								udc);
 						break;
 					case TEST_OTG_SRP_REQD:
+#ifdef CONFIG_USB_G_LGE_ANDROID
+						if(udc->gadget.is_otg) {
+							udc->gadget.otg_srp_reqd = 1;
+							err = isr_setup_status_phase(
+									udc);
+						}
+#else
 						udc->gadget.otg_srp_reqd = 1;
 						err = isr_setup_status_phase(
 								udc);
+#endif
 						break;
 					case TEST_OTG_HNP_REQD:
+#ifdef CONFIG_USB_G_LGE_ANDROID
+						if(udc->gadget.is_otg) {
+							udc->gadget.host_request = 1;
+							err = isr_setup_status_phase(
+									udc);
+						}
+#else
 						udc->gadget.host_request = 1;
 						err = isr_setup_status_phase(
 								udc);
+#endif
 						break;
 					default:
 						break;
@@ -2551,6 +2600,7 @@ static int ep_enable(struct usb_ep *ep,
 	struct ci13xxx_ep *mEp = container_of(ep, struct ci13xxx_ep, ep);
 	int retval = 0;
 	unsigned long flags;
+	unsigned mult = 0;
 
 	trace("%p, %p", ep, desc);
 
@@ -2576,12 +2626,15 @@ static int ep_enable(struct usb_ep *ep,
 
 	mEp->qh.ptr->cap = 0;
 
-	if (mEp->type == USB_ENDPOINT_XFER_CONTROL)
+	if (mEp->type == USB_ENDPOINT_XFER_CONTROL) {
 		mEp->qh.ptr->cap |=  QH_IOS;
-	else if (mEp->type == USB_ENDPOINT_XFER_ISOC)
+	} else if (mEp->type == USB_ENDPOINT_XFER_ISOC) {
 		mEp->qh.ptr->cap &= ~QH_MULT;
-	else
+		mult = ((mEp->ep.maxpacket >> QH_MULT_SHIFT) + 1) & 0x03;
+		mEp->qh.ptr->cap |= (mult << ffs_nr(QH_MULT));
+	} else {
 		mEp->qh.ptr->cap |= QH_ZLT;
+	}
 
 	mEp->qh.ptr->cap |=
 		(mEp->ep.maxpacket << ffs_nr(QH_MAX_PKT)) & QH_MAX_PKT;
@@ -3111,7 +3164,14 @@ static int ci13xxx_start(struct usb_gadget_driver *driver,
 
 			mEp->ep.name      = mEp->name;
 			mEp->ep.ops       = &usb_ep_ops;
+#ifdef CONFIG_USB_G_LGE_ANDROID
+			if(k == 0 || k == hw_ep_max/2)
+				mEp->ep.maxpacket = CTRL_PAYLOAD_MAX;
+			else
+				mEp->ep.maxpacket = (unsigned short) ~0;
+#else
 			mEp->ep.maxpacket = CTRL_PAYLOAD_MAX;
+#endif
 
 			INIT_LIST_HEAD(&mEp->qh.queue);
 			spin_unlock_irqrestore(udc->lock, flags);

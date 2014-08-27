@@ -139,6 +139,7 @@ static int msm_pmem_table_add(struct hlist_head *ptype,
 	if (ion_map_iommu(client, region->handle, CAMERA_DOMAIN, GEN_POOL,
 				  SZ_4K, 0, &paddr, &len, UNCACHED, 0) < 0)
 		goto out2;
+	pr_err("%s: IOMMU mapped address is 0x%x\n", __func__, (unsigned int)paddr); //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 #elif CONFIG_ANDROID_PMEM
 	rc = get_pmem_file(info->fd, &paddr, &kvstart, &len, &file);
 	if (rc < 0) {
@@ -246,6 +247,7 @@ static int __msm_pmem_table_del(struct hlist_head *ptype,
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 				ion_unmap_iommu(client, region->handle,
 					CAMERA_DOMAIN, GEN_POOL);
+ 				pr_err("%s: IOMMU unmapping address 0x%x\n", __func__, (unsigned int)region->paddr); //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 				ion_free(client, region->handle);
 #else
 				put_pmem_file(region->file);

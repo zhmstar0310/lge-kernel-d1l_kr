@@ -199,7 +199,7 @@ static void msm_vb2_ops_buf_cleanup(struct vb2_buffer *vb)
 	struct msm_cam_v4l2_device *pcam;
 	struct videobuf2_contig_pmem *mem;
 	struct msm_frame_buffer *buf, *tmp;
-	uint32_t i, vb_phyaddr = 0, buf_phyaddr = 0;
+	uint32_t i, rc, vb_phyaddr = 0, buf_phyaddr = 0; //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 	unsigned long flags = 0;
 
 	pcam_inst = vb2_get_drv_priv(vb->vb2_queue);
@@ -251,6 +251,26 @@ static void msm_vb2_ops_buf_cleanup(struct vb2_buffer *vb)
 		spin_unlock_irqrestore(&pcam_inst->vq_irqlock, flags);
 	}
 	pmctl = msm_camera_get_mctl(pcam->mctl_handle);
+
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
+	 if (!get_server_use_count() && 
+	 pmctl && pmctl->hardware_running) { 
+		 pr_err("%s: daemon crashed but hardware is still running\n", 
+		 __func__); 
+		 if (pmctl->mctl_release) { 
+			 pr_err("%s: Releasing now\n", __func__); 
+			 /*do not send any commands to hardware 
+			 after reaching this point*/ 
+			 pmctl->mctl_cmd = NULL; 
+			 rc = pmctl->mctl_release(pmctl); 
+			 if (rc < 0) 
+			 pr_err("mctl_release fails %d\n", rc); 
+			 pmctl->mctl_release = NULL; 
+			 pmctl->hardware_running = 0; 
+		 } 
+	 } 
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
+	
 	for (i = 0; i < vb->num_planes; i++) {
 		mem = vb2_plane_cookie(vb, i);
 		videobuf2_pmem_contig_user_put(mem, pmctl->client);
@@ -594,6 +614,13 @@ int msm_mctl_reserve_free_buf(
 					__func__,
 					pcam_inst->buf_offset[buf_idx][i].
 					data_offset, plane_offset);
+				//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim	
+				if (pcam_inst->buf_offset[buf_idx][i].data_offset != 0 || plane_offset != 0) {
+				 pr_err("%s: data offset %d, plane_offset %d\n",
+				 __func__,
+				 pcam_inst->buf_offset[buf_idx][i].data_offset,
+				 plane_offset);
+				}
 				free_buf->ch_paddr[i] =	(uint32_t)
 				videobuf2_to_pmem_contig(&buf->vidbuf, i) +
 				pcam_inst->buf_offset[buf_idx][i].data_offset +

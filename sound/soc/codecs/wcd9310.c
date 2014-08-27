@@ -34,6 +34,13 @@
 #include <linux/kernel.h>
 #include <linux/gpio.h>
 #include "wcd9310.h"
+#ifdef CONFIG_LGE_AUDIO_MBHC_SDEV
+#include <linux/switch.h>
+#endif
+#ifdef CONFIG_SWITCH_FSA8008
+#include <linux/gpio.h>
+#include "../../../arch/arm/mach-msm/include/mach/board_lge.h"
+#endif
 
 static int cfilt_adjust_ms = 10;
 module_param(cfilt_adjust_ms, int, 0644);
@@ -185,6 +192,13 @@ enum tabla_priv_ack_flags {
 	TABLA_HPHL_DAC_OFF_ACK,
 	TABLA_HPHR_DAC_OFF_ACK
 };
+#ifdef CONFIG_LGE_AUDIO_MBHC_SDEV
+enum {
+	NO_DEVICE   = 0,
+	LGE_HEADSET = (1 << 0),
+	LGE_HEADSET_NO_MIC = (1 << 1),
+};
+#endif
 
 
 struct comp_sample_dependent_params {
@@ -270,6 +284,10 @@ struct tabla_priv {
 	bool mbhc_polling_active;
 	unsigned long mbhc_fake_ins_start;
 	int buttons_pressed;
+#ifdef CONFIG_SWITCH_FSA8008
+	u32 audio_band_gap_cnt;
+	u32 ldo_h_count;
+#endif
 	enum tabla_mbhc_state mbhc_state;
 	struct tabla_mbhc_config mbhc_cfg;
 	struct mbhc_internal_cal_data mbhc_data;
@@ -297,6 +315,9 @@ struct tabla_priv {
 	 */
 	struct work_struct hphlocp_work; /* reporting left hph ocp off */
 	struct work_struct hphrocp_work; /* reporting right hph ocp off */
+#ifdef CONFIG_LGE_AUDIO_MBHC_SDEV
+	struct switch_dev sdev;	/* for MBHC switch device driver */
+#endif
 
 	u8 hphlocp_cnt; /* headphone left ocp retry */
 	u8 hphrocp_cnt; /* headphone right ocp retry */
@@ -408,6 +429,55 @@ static unsigned short tx_digital_gain_reg[] = {
 	TABLA_A_CDC_TX9_VOL_CTL_GAIN,
 	TABLA_A_CDC_TX10_VOL_CTL_GAIN,
 };
+
+/*                                          
+                                                                
+  */
+#ifdef CONFIG_SWITCH_FSA8008
+static struct snd_soc_codec *snd_codec = NULL;
+#endif
+static int snd_check;
+static int snd_check_set(const char *val, struct kernel_param *kp)
+{
+	int idx, ok = 0;
+	pr_err("sound card check !!!\n");
+
+	for (idx = 0; idx < SNDRV_CARDS; idx++)
+		if (snd_cards[idx] != NULL) {
+			ok++;
+		}
+	if (ok == 0)
+		panic("No soundcards found");
+	return 0;
+}
+module_param_call(snd_check, snd_check_set, param_get_int,
+	&snd_check, S_IRUGO|S_IWUSR|S_IWGRP);
+/*                                        */
+
+#ifdef CONFIG_LGE_AUDIO_MBHC_SDEV
+static ssize_t lge_hsd_print_name(struct switch_dev *sdev, char *buf)
+{
+	switch (switch_get_state(sdev)) {
+
+	case NO_DEVICE:
+		return sprintf(buf, "No Device");
+
+	case LGE_HEADSET:
+		return sprintf(buf, "Headset");
+
+	case LGE_HEADSET_NO_MIC:
+		return sprintf(buf, "Headset");
+
+/*      return sprintf(buf, "Headset_no_mic\n"); */
+	}
+	return -EINVAL;
+}
+
+static ssize_t lge_hsd_print_state(struct switch_dev *sdev, char *buf)
+{
+	return sprintf(buf, "%d\n", switch_get_state(sdev));
+}
+#endif
 
 static int tabla_codec_enable_charge_pump(struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *kcontrol, int event)
@@ -939,7 +1009,48 @@ static const struct snd_kcontrol_new tabla_snd_controls[] = {
 		line_gain),
 	SOC_SINGLE_TLV("HPHR Volume", TABLA_A_RX_HPH_R_GAIN, 0, 12, 1,
 		line_gain),
+/*                */
 
+/*                                                 
+                                                                                     
+ */
+#if defined(CONFIG_LGE_AUDIO) /*          */
+	SOC_SINGLE_S8_TLV("RX1 Digital Volume", TABLA_A_CDC_RX1_VOL_CTL_B2_CTL,
+		-60, 40, digital_gain),
+	SOC_SINGLE_S8_TLV("RX2 Digital Volume", TABLA_A_CDC_RX2_VOL_CTL_B2_CTL,
+		-60, 40, digital_gain),
+	SOC_SINGLE_S8_TLV("RX3 Digital Volume", TABLA_A_CDC_RX3_VOL_CTL_B2_CTL,
+		-60, 40, digital_gain),
+	SOC_SINGLE_S8_TLV("RX4 Digital Volume", TABLA_A_CDC_RX4_VOL_CTL_B2_CTL,
+		-60, 40, digital_gain),
+	SOC_SINGLE_S8_TLV("RX5 Digital Volume", TABLA_A_CDC_RX5_VOL_CTL_B2_CTL,
+		-60, 40, digital_gain),
+	SOC_SINGLE_S8_TLV("RX6 Digital Volume", TABLA_A_CDC_RX6_VOL_CTL_B2_CTL,
+		-60, 40, digital_gain),
+	SOC_SINGLE_S8_TLV("RX7 Digital Volume", TABLA_A_CDC_RX7_VOL_CTL_B2_CTL,
+		-60, 40, digital_gain),
+
+	SOC_SINGLE_S8_TLV("DEC1 Volume", TABLA_A_CDC_TX1_VOL_CTL_GAIN, -60, 40,
+		digital_gain),
+	SOC_SINGLE_S8_TLV("DEC2 Volume", TABLA_A_CDC_TX2_VOL_CTL_GAIN, -60, 40,
+		digital_gain),
+	SOC_SINGLE_S8_TLV("DEC3 Volume", TABLA_A_CDC_TX3_VOL_CTL_GAIN, -60, 40,
+		digital_gain),
+	SOC_SINGLE_S8_TLV("DEC4 Volume", TABLA_A_CDC_TX4_VOL_CTL_GAIN, -60, 40,
+		digital_gain),
+	SOC_SINGLE_S8_TLV("DEC5 Volume", TABLA_A_CDC_TX5_VOL_CTL_GAIN, -60, 40,
+		digital_gain),
+	SOC_SINGLE_S8_TLV("DEC6 Volume", TABLA_A_CDC_TX6_VOL_CTL_GAIN, -60, 40,
+		digital_gain),
+	SOC_SINGLE_S8_TLV("DEC7 Volume", TABLA_A_CDC_TX7_VOL_CTL_GAIN, -60, 40,
+		digital_gain),
+	SOC_SINGLE_S8_TLV("DEC8 Volume", TABLA_A_CDC_TX8_VOL_CTL_GAIN, -60, 40,
+		digital_gain),
+	SOC_SINGLE_S8_TLV("DEC9 Volume", TABLA_A_CDC_TX9_VOL_CTL_GAIN, -60, 40,
+		digital_gain),
+	SOC_SINGLE_S8_TLV("DEC10 Volume", TABLA_A_CDC_TX10_VOL_CTL_GAIN, -60,
+		40, digital_gain),
+#else /* qualcomm original code */
 	SOC_SINGLE_S8_TLV("RX1 Digital Volume", TABLA_A_CDC_RX1_VOL_CTL_B2_CTL,
 		-84, 40, digital_gain),
 	SOC_SINGLE_S8_TLV("RX2 Digital Volume", TABLA_A_CDC_RX2_VOL_CTL_B2_CTL,
@@ -975,6 +1086,8 @@ static const struct snd_kcontrol_new tabla_snd_controls[] = {
 		digital_gain),
 	SOC_SINGLE_S8_TLV("DEC10 Volume", TABLA_A_CDC_TX10_VOL_CTL_GAIN, -84,
 		40, digital_gain),
+#endif
+/*                                                */
 	SOC_SINGLE_S8_TLV("IIR1 INP1 Volume", TABLA_A_CDC_IIR1_GAIN_B1_CTL, -84,
 		40, digital_gain),
 	SOC_SINGLE_S8_TLV("IIR1 INP2 Volume", TABLA_A_CDC_IIR1_GAIN_B2_CTL, -84,
@@ -1756,6 +1869,96 @@ static void tabla_codec_enable_audio_mode_bandgap(struct snd_soc_codec *codec)
 		0x00);
 }
 
+#ifdef CONFIG_SWITCH_FSA8008
+static void tabla_codec_enable_bandgap(struct snd_soc_codec *codec,
+	enum tabla_bandgap_type choice)
+{
+	struct tabla_priv *tabla = snd_soc_codec_get_drvdata(codec);
+
+	static int value;
+	value = gpio_get_value_cansleep(199);
+
+	if (!value)
+		pr_debug("===> Headset inserted. \n");
+	else
+		pr_debug("===> Headset removed.\n");
+
+	/* TODO lock resources accessed by audio streams and threaded
+	 * interrupt handlers
+	 */
+
+    pr_debug("%s, choice is %d, current is %d audio_band_gap_cnt %d\n",
+        __func__, choice, tabla->bandgap_type,
+        tabla->audio_band_gap_cnt);
+
+
+    if (tabla->bandgap_type == choice) {
+        if (choice == TABLA_BANDGAP_AUDIO_MODE) {
+            tabla->audio_band_gap_cnt++;
+			pr_debug("audio_band_gap_cnt is increased by current=choice=1.\n");
+       	}
+        if (choice == TABLA_BANDGAP_MBHC_MODE)
+            return;
+        }
+
+	if ((tabla->bandgap_type == TABLA_BANDGAP_OFF) &&
+		(choice == TABLA_BANDGAP_AUDIO_MODE)) {
+		tabla->audio_band_gap_cnt++;
+		tabla_codec_enable_audio_mode_bandgap(codec);
+		pr_debug("audio_band_gap_cnt is increased by current=0 && choice=1.\n");
+	} else if (choice == TABLA_BANDGAP_MBHC_MODE) {
+		/* bandgap mode becomes fast,
+		 * mclk should be off or clk buff source souldn't be VBG
+		 * Let's turn off mclk always */
+		WARN_ON(snd_soc_read(codec, TABLA_A_CLK_BUFF_EN2) & (1 << 2));
+		snd_soc_update_bits(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x2,
+			0x2);
+		snd_soc_update_bits(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x80,
+			0x80);
+		snd_soc_update_bits(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x4,
+			0x4);
+		snd_soc_update_bits(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x01,
+			0x01);
+		usleep_range(1000, 1000);
+		snd_soc_update_bits(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x80,
+			0x00);
+	} else if ((tabla->bandgap_type == TABLA_BANDGAP_MBHC_MODE) &&
+		(choice == TABLA_BANDGAP_AUDIO_MODE)) {
+		tabla->audio_band_gap_cnt++;
+		snd_soc_write(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x00);
+		pr_debug("audio_band_gap_cnt is increased by current=2 && choice=1.\n");
+		usleep_range(100, 100);
+		tabla_codec_enable_audio_mode_bandgap(codec);
+	} else if (choice == TABLA_BANDGAP_OFF) {
+        if (tabla->audio_band_gap_cnt == 0) {
+            pr_err("%s: Error, bandgap count is already zero\n", __func__);
+            } else {
+                 tabla->audio_band_gap_cnt--;
+				 pr_debug("audio_band_gap_cnt is decreased by choice=0.\n");
+                  if (!tabla->audio_band_gap_cnt){
+				  	/*                                                                               
+                              
+             */
+					#if 1
+						if(value) {
+                    	snd_soc_write(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x50);
+						pr_debug("Reg write to TABLA_A_BIAS_CENTRAL_BG_CTL\n");
+			        	} else {
+			        		pr_debug("===> snd_soc_write is skipped by Headset.\n");
+		        		}
+					#else
+						snd_soc_write(codec, TABLA_A_BIAS_CENTRAL_BG_CTL, 0x50);
+						pr_debug("Reg write to TABLA_A_BIAS_CENTRAL_BG_CTL\n");
+					#endif
+                  	}
+                 }
+	} else {
+		pr_err("%s: Error, Invalid bandgap settings\n", __func__);
+	}
+	tabla->bandgap_type = choice;
+    pr_debug("%s. audio_band_gap_cnt %d\n",__func__,tabla->audio_band_gap_cnt);
+}
+#else
 static void tabla_codec_enable_bandgap(struct snd_soc_codec *codec,
 	enum tabla_bandgap_type choice)
 {
@@ -1802,6 +2005,7 @@ static void tabla_codec_enable_bandgap(struct snd_soc_codec *codec,
 	}
 	tabla->bandgap_type = choice;
 }
+#endif
 
 static void tabla_codec_disable_clock_block(struct snd_soc_codec *codec)
 {
@@ -2647,6 +2851,34 @@ static int tabla_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
+#ifdef CONFIG_SWITCH_FSA8008
+static int tabla_codec_enable_ldo_h(struct snd_soc_dapm_widget *w,
+    struct snd_kcontrol *kcontrol, int event);
+
+static int tabla_codec_enable_micbias_power(struct snd_soc_dapm_widget *w,
+    struct snd_kcontrol *kcontrol, int event)
+{
+        struct snd_soc_codec *codec = w->codec;
+        struct tabla_priv *tabla = snd_soc_codec_get_drvdata(codec);
+        pr_debug("%s %d\n", __func__, event);
+        switch (event) {
+            case SND_SOC_DAPM_PRE_PMU:
+                tabla->mbhc_cfg.mclk_cb_fn(codec, MCLK_ON_BANDGAP_ON, true);
+                tabla_codec_enable_ldo_h(w, kcontrol, event);
+                tabla_codec_enable_micbias(w, kcontrol, event);
+                break;
+            case SND_SOC_DAPM_POST_PMU:
+                tabla->mbhc_cfg.mclk_cb_fn(codec, MCLK_OF_BANDGAP_ON, true);
+                break;
+			/* Add Test code from Srinvias. for 11mA.  2012-03-14 SD*/
+			case SND_SOC_DAPM_POST_PMD :
+				tabla_codec_enable_ldo_h(w, kcontrol, event);
+				tabla_codec_enable_micbias(w, kcontrol, event);
+				break;
+         }
+        return 0;
+}
+#endif
 
 static void tx_hpf_corner_freq_callback(struct work_struct *work)
 {
@@ -2825,7 +3057,51 @@ static int tabla_codec_reset_interpolator(struct snd_soc_dapm_widget *w,
 	}
 	return 0;
 }
+#ifdef CONFIG_SWITCH_FSA8008
+static void tabla_enable_ldo_h(struct snd_soc_codec *codec, u32  enable)
+{
 
+    struct tabla_priv *tabla = snd_soc_codec_get_drvdata(codec);
+
+	if (enable) {
+		mutex_lock(&codec->card->mutex);
+		tabla->ldo_h_count++;
+		if (tabla->ldo_h_count == 1)
+			snd_soc_update_bits(codec, TABLA_A_LDO_H_MODE_1,
+				0x80, 0x80);
+		mutex_unlock(&codec->card->mutex);
+		pr_debug( "tabla_enable_ldo_h : en[%d], cnt[%d]\n", enable, tabla->ldo_h_count);
+	} else {
+		mutex_lock(&codec->card->mutex);
+		tabla->ldo_h_count--;
+		if (!tabla->ldo_h_count)
+			snd_soc_update_bits(codec, TABLA_A_LDO_H_MODE_1,
+				0x80, 0x00);
+		mutex_unlock(&codec->card->mutex);
+		pr_debug( "tabla_enable_ldo_h : en[%d], cnt[%d]\n", enable, tabla->ldo_h_count);
+	}
+}
+
+static int tabla_codec_enable_ldo_h(struct snd_soc_dapm_widget *w,
+	struct snd_kcontrol *kcontrol, int event)
+{
+    struct snd_soc_codec *codec = w->codec;
+    pr_debug("%s %d\n", __func__, event);
+
+    switch (event) {
+	case SND_SOC_DAPM_POST_PMU:
+    case SND_SOC_DAPM_PRE_PMU:
+        tabla_enable_ldo_h(codec, 1);
+        usleep_range(1000, 1000);
+        break;
+	case SND_SOC_DAPM_POST_PMD:
+        tabla_enable_ldo_h(codec, 0);
+		usleep_range(1000, 1000);
+		break;
+	}
+	return 0;
+}
+#else
 static int tabla_codec_enable_ldo_h(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
@@ -2837,6 +3113,7 @@ static int tabla_codec_enable_ldo_h(struct snd_soc_dapm_widget *w,
 	}
 	return 0;
 }
+#endif
 
 static int tabla_codec_enable_rx_bias(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
@@ -2974,7 +3251,7 @@ static int tabla_hph_pa_event(struct snd_soc_dapm_widget *w,
 
 		pr_debug("%s: sleep 10 ms after %s PA disable.\n", __func__,
 				w->name);
-		usleep_range(10000, 10000);
+		usleep_range(20000, 20000);
 		break;
 	}
 	return 0;
@@ -3062,6 +3339,31 @@ static int tabla_lineout_dac_event(struct snd_soc_dapm_widget *w,
 	}
 	return 0;
 }
+
+/*                       
+                              
+                                                 
+ */
+static int tabla_ear_pa_event(struct snd_soc_dapm_widget *w,
+	struct snd_kcontrol *kcontrol, int event)
+{
+	struct snd_soc_codec *codec = w->codec;
+
+	pr_debug("%s %d\n", __func__, event);
+
+	switch (event) {
+	case SND_SOC_DAPM_PRE_PMU:
+		snd_soc_update_bits(codec, TABLA_A_RX_EAR_EN, 0x50, 0x50);
+		break;
+
+	case SND_SOC_DAPM_PRE_PMD:
+		snd_soc_update_bits(codec, TABLA_A_RX_EAR_EN, 0x10, 0x00);
+		snd_soc_update_bits(codec, TABLA_A_RX_EAR_EN, 0x40, 0x00);
+		break;
+	}
+	return 0;
+}
+/*                      */
 
 static const struct snd_soc_dapm_widget tabla_1_x_dapm_widgets[] = {
 	SND_SOC_DAPM_MICBIAS_E("MIC BIAS4 External", TABLA_1_A_MICB_4_CTL, 7,
@@ -3783,6 +4085,65 @@ static void tabla_shutdown(struct snd_pcm_substream *substream,
 
 int tabla_mclk_enable(struct snd_soc_codec *codec, int mclk_enable, bool dapm)
 {
+#ifdef CONFIG_SWITCH_FSA8008
+	struct tabla_priv *tabla = snd_soc_codec_get_drvdata(codec);
+
+	pr_debug("%s() mclk_bandgap_state = %u. mbhc_polling_active = %u\n",
+        __func__, mclk_enable, tabla->mbhc_polling_active);
+
+    if (dapm)
+        TABLA_ACQUIRE_LOCK(tabla->codec_resource_lock);
+
+	if (mclk_enable == MCLK_ON_BANDGAP_ON ) {
+		tabla->mclk_enabled = true;
+
+		if (tabla->mbhc_polling_active && (tabla->mclk_enabled)) {
+			tabla_codec_pause_hs_polling(codec);
+			tabla_codec_enable_bandgap(codec,
+					TABLA_BANDGAP_AUDIO_MODE);
+			tabla_codec_enable_clock_block(codec, 0);
+			tabla_codec_calibrate_hs_polling(codec);
+			tabla_codec_start_hs_polling(codec);
+		} else {
+			tabla_codec_enable_bandgap(codec,
+					TABLA_BANDGAP_AUDIO_MODE);
+			tabla_codec_enable_clock_block(codec, 0);
+		}
+    } else if (mclk_enable == MCLK_OFF_BANDGAP_OFF) {
+
+		if (!tabla->mclk_enabled) {
+            if (dapm)
+                TABLA_RELEASE_LOCK(tabla->codec_resource_lock);
+			pr_err("Error, MCLK already diabled\n");
+			return -EINVAL;
+		}
+		tabla->mclk_enabled = false;
+
+		if (tabla->mbhc_polling_active) {
+			if (!tabla->mclk_enabled) {
+				tabla_codec_pause_hs_polling(codec);
+				tabla_codec_enable_bandgap(codec,
+					TABLA_BANDGAP_MBHC_MODE);
+				tabla_enable_rx_bias(codec, 1);
+				tabla_codec_enable_clock_block(codec, 1);
+				tabla_codec_calibrate_hs_polling(codec);
+				tabla_codec_start_hs_polling(codec);
+			}
+			snd_soc_update_bits(codec, TABLA_A_CLK_BUFF_EN1,
+					0x05, 0x01);
+		} else {
+			tabla_codec_disable_clock_block(codec);
+			tabla_codec_enable_bandgap(codec,
+				TABLA_BANDGAP_OFF);
+		}
+     } else if (mclk_enable == MCLK_OF_BANDGAP_ON) {
+        tabla->mclk_enabled = false;
+        tabla_codec_disable_clock_block(codec);
+	}
+    if (dapm)
+        TABLA_RELEASE_LOCK(tabla->codec_resource_lock);
+	return 0;
+#else
 	struct tabla_priv *tabla = snd_soc_codec_get_drvdata(codec);
 
 	pr_debug("%s: mclk_enable = %u, dapm = %d\n", __func__, mclk_enable,
@@ -3836,6 +4197,7 @@ int tabla_mclk_enable(struct snd_soc_codec *codec, int mclk_enable, bool dapm)
 	if (dapm)
 		TABLA_RELEASE_LOCK(tabla->codec_resource_lock);
 	return 0;
+#endif
 }
 
 static int tabla_set_dai_sysclk(struct snd_soc_dai *dai,
@@ -4692,10 +5054,17 @@ static const struct snd_soc_dapm_widget tabla_dapm_widgets[] = {
 	/*RX stuff */
 	SND_SOC_DAPM_OUTPUT("EAR"),
 
-	SND_SOC_DAPM_PGA("EAR PA", TABLA_A_RX_EAR_EN, 4, 0, NULL, 0),
+	/*                       
+                               
+                                                  
+  */
+	SND_SOC_DAPM_PGA_E("EAR PA", SND_SOC_NOPM, 0, 0, NULL,
+			0, tabla_ear_pa_event, SND_SOC_DAPM_PRE_PMU |
+			SND_SOC_DAPM_PRE_PMD),
 
-	SND_SOC_DAPM_MIXER("DAC1", TABLA_A_RX_EAR_EN, 6, 0, dac1_switch,
+	SND_SOC_DAPM_MIXER("DAC1", SND_SOC_NOPM, 0, 0, dac1_switch,
 		ARRAY_SIZE(dac1_switch)),
+	/*                      */
 
 	/* Headphone */
 	SND_SOC_DAPM_OUTPUT("HEADPHONE"),
@@ -4849,9 +5218,14 @@ static const struct snd_soc_dapm_widget tabla_dapm_widgets[] = {
 	SND_SOC_DAPM_SUPPLY("CDC_CONN", TABLA_A_CDC_CLK_OTHR_CTL, 2, 0, NULL,
 		0),
 
+#ifdef CONFIG_SWITCH_FSA8008
+	SND_SOC_DAPM_SUPPLY("LDO_H", SND_SOC_NOPM, 0, 0,
+		tabla_codec_enable_ldo_h, SND_SOC_DAPM_PRE_PMU |
+		SND_SOC_DAPM_POST_PMD),
+#else
 	SND_SOC_DAPM_SUPPLY("LDO_H", TABLA_A_LDO_H_MODE_1, 7, 0,
 		tabla_codec_enable_ldo_h, SND_SOC_DAPM_POST_PMU),
-
+#endif
 	SND_SOC_DAPM_SUPPLY("COMP1_CLK", SND_SOC_NOPM, 0, 0,
 		tabla_config_compander, SND_SOC_DAPM_PRE_PMU |
 		SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_PRE_POST_PMD),
@@ -4954,6 +5328,11 @@ static const struct snd_soc_dapm_widget tabla_dapm_widgets[] = {
 	SND_SOC_DAPM_MICBIAS_E("MIC BIAS2 External", TABLA_A_MICB_2_CTL, 7, 0,
 		tabla_codec_enable_micbias, SND_SOC_DAPM_PRE_PMU |
 		SND_SOC_DAPM_POST_PMU |	SND_SOC_DAPM_POST_PMD),
+#ifdef CONFIG_SWITCH_FSA8008
+	SND_SOC_DAPM_MICBIAS_E("MIC BIAS2 Power External", TABLA_A_MICB_2_CTL, 7, 0,
+		tabla_codec_enable_micbias_power, SND_SOC_DAPM_PRE_PMU |
+		SND_SOC_DAPM_POST_PMU |	SND_SOC_DAPM_POST_PMD),
+#endif
 	SND_SOC_DAPM_MICBIAS_E("MIC BIAS2 Internal1", TABLA_A_MICB_2_CTL, 7, 0,
 		tabla_codec_enable_micbias, SND_SOC_DAPM_PRE_PMU |
 		SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
@@ -5906,6 +6285,16 @@ static bool tabla_mbhc_fw_validate(const struct firmware *fw)
 	return true;
 }
 
+#ifdef CONFIG_SWITCH_FSA8008
+void tabla_register_mclk_call_back(struct snd_soc_codec *codec,
+    int (*mclk_cb_fn) (struct snd_soc_codec *codec, int , bool ))
+{
+        struct tabla_priv *tabla = snd_soc_codec_get_drvdata(codec);;
+        tabla->mbhc_cfg.mclk_cb_fn = mclk_cb_fn;
+}
+EXPORT_SYMBOL_GPL(tabla_register_mclk_call_back);
+#endif
+
 /* called under codec_resource_lock acquisition */
 static int tabla_determine_button(const struct tabla_priv *priv,
 				  const s32 micmv)
@@ -6719,12 +7108,18 @@ static void tabla_codec_detect_plug_type(struct snd_soc_codec *codec)
 		tabla_codec_enable_hs_detect(codec, 0, 0, false);
 	} else if (plug_type == PLUG_TYPE_HEADPHONE) {
 		pr_debug("%s: Headphone Detected\n", __func__);
+#ifdef CONFIG_LGE_AUDIO_MBHC_SDEV
+		switch_set_state(&tabla->sdev, LGE_HEADSET_NO_MIC); //HEADSET_NO_MIC
+#endif
 		tabla_codec_report_plug(codec, 1, SND_JACK_HEADPHONE);
 		tabla_codec_cleanup_hs_polling(codec);
 		tabla_schedule_hs_detect_plug(tabla,
 					&tabla->hs_correct_plug_work_nogpio);
 	} else if (plug_type == PLUG_TYPE_HEADSET) {
 		pr_debug("%s: Headset detected\n", __func__);
+#ifdef CONFIG_LGE_AUDIO_MBHC_SDEV
+		switch_set_state(&tabla->sdev, LGE_HEADSET); //HEADSET
+#endif
 		tabla_codec_report_plug(codec, 1, SND_JACK_HEADSET);
 
 		/* avoid false button press detect */
@@ -6782,6 +7177,9 @@ static void tabla_hs_insert_irq_nogpio(struct tabla_priv *priv, bool is_removal,
 		 * it is possible that micbias will be switched to VDDIO.
 		 */
 		tabla_codec_switch_micbias(codec, 0);
+#ifdef CONFIG_LGE_AUDIO_MBHC_SDEV
+		switch_set_state(&priv->sdev, NO_DEVICE); //NO_DEVICE
+#endif
 		if (priv->current_plug == PLUG_TYPE_HEADPHONE)
 			tabla_codec_report_plug(codec, 0, SND_JACK_HEADPHONE);
 		else if (priv->current_plug == PLUG_TYPE_GND_MIC_SWAP)
@@ -6998,6 +7396,9 @@ static void tabla_hs_remove_irq_nogpio(struct tabla_priv *priv)
 		 * switched to VDDIO.
 		 */
 		tabla_codec_switch_micbias(codec, 0);
+#ifdef CONFIG_LGE_AUDIO_MBHC_SDEV
+		switch_set_state(&priv->sdev, 0); //NO_DEVICE
+#endif
 
 		tabla_codec_report_plug(codec, 0, SND_JACK_HEADSET);
 		tabla_codec_cleanup_hs_polling(codec);
@@ -7358,6 +7759,20 @@ int tabla_hs_detect(struct snd_soc_codec *codec,
 	tabla->current_plug = PLUG_TYPE_NONE;
 	tabla->lpi_enabled = false;
 	tabla_get_mbhc_micbias_regs(codec, &tabla->mbhc_bias_regs);
+
+#ifdef CONFIG_LGE_AUDIO_MBHC_SDEV
+	/*                 
+                                  
+                                                   
+  */
+
+	/* initialize switch device */
+	tabla->sdev.name	= "h2w";
+	tabla->sdev.print_state = lge_hsd_print_state;
+	tabla->sdev.print_name = lge_hsd_print_name;
+	if (switch_dev_register(&tabla->sdev))
+		kfree(&tabla->sdev);
+#endif
 
 	/* Put CFILT in fast mode by default */
 	snd_soc_update_bits(codec, tabla->mbhc_bias_regs.cfilt_ctl,
@@ -7761,6 +8176,43 @@ static void tabla_update_reg_address(struct tabla_priv *priv)
 	}
 }
 
+#ifdef CONFIG_SWITCH_FSA8008
+/*
+                               
+                                                             
+                                   
+*/
+void tabla_codec_micbias2_ctl(int enable)
+{
+	struct snd_soc_codec *codec = NULL;
+	if (snd_codec == NULL) {
+		pr_err("%s, Failed to init tabla codec\n", __func__);
+		return;
+	}
+
+	codec = snd_codec;
+	pr_info("%s, enable : %d\n", __func__ , enable);
+
+	if(enable){
+		mutex_lock(&codec->mutex);
+		snd_soc_dapm_force_enable_pin(&codec->dapm, "MIC BIAS2 Power External");
+		snd_soc_dapm_sync(&codec->dapm);
+		mutex_unlock(&codec->mutex);
+		pr_debug("After calling the snd_soc_dapm_enable_pin \n");
+	} else {
+		mutex_lock(&codec->mutex);
+		//                                                                                                      
+		snd_soc_update_bits(codec, TABLA_A_TX_1_2_EN, 0x0F, 0x00);
+		//                                             
+		snd_soc_dapm_disable_pin(&codec->dapm, "MIC BIAS2 Power External");
+		snd_soc_dapm_sync(&codec->dapm);
+		mutex_unlock(&codec->mutex);
+		pr_debug("After calling the snd_soc_dapm_disable_pin \n");
+	}
+}
+EXPORT_SYMBOL_GPL(tabla_codec_micbias2_ctl);
+#endif /* CONFIG_SWITCH_FSA8008 */
+
 #ifdef CONFIG_DEBUG_FS
 static int codec_debug_open(struct inode *inode, struct file *file)
 {
@@ -7933,6 +8385,12 @@ static int tabla_codec_probe(struct snd_soc_codec *codec)
 	tabla->aux_pga_cnt = 0;
 	tabla->aux_l_gain = 0x1F;
 	tabla->aux_r_gain = 0x1F;
+#ifdef CONFIG_SWITCH_FSA8008
+	tabla->ldo_h_count = 0;
+	tabla->audio_band_gap_cnt = 0;
+	mutex_init(&tabla->codec->card->mutex);
+#endif
+
 	tabla_update_reg_address(tabla);
 	tabla_update_reg_defaults(codec);
 	tabla_codec_init_reg(codec);
@@ -7989,6 +8447,10 @@ static int tabla_codec_probe(struct snd_soc_codec *codec)
 
 	snd_soc_dapm_sync(dapm);
 
+#ifdef CONFIG_SWITCH_FSA8008
+//	if(lge_get_board_usembhc() == true) {
+	if(false) {
+#endif
 	ret = wcd9xxx_request_irq(codec->control_data, TABLA_IRQ_MBHC_INSERTION,
 		tabla_hs_insert_irq, "Headset insert detect", tabla);
 	if (ret) {
@@ -8021,6 +8483,9 @@ static int tabla_codec_probe(struct snd_soc_codec *codec)
 			TABLA_IRQ_MBHC_RELEASE);
 		goto err_release_irq;
 	}
+#ifdef CONFIG_SWITCH_FSA8008
+	}
+#endif
 
 	ret = wcd9xxx_request_irq(codec->control_data, TABLA_IRQ_SLIMBUS,
 		tabla_slimbus_irq, "SLIMBUS Slave", tabla);
@@ -8091,6 +8556,9 @@ static int tabla_codec_probe(struct snd_soc_codec *codec)
 					NULL, tabla, &codec_mbhc_debug_ops);
 	}
 #endif
+#ifdef CONFIG_SWITCH_FSA8008
+	snd_codec = codec;   //                                                                        
+#endif
 	codec->ignore_pmdown_time = 1;
 	return ret;
 
@@ -8126,6 +8594,9 @@ static int tabla_codec_remove(struct snd_soc_codec *codec)
 	tabla_codec_disable_clock_block(codec);
 	TABLA_RELEASE_LOCK(tabla->codec_resource_lock);
 	tabla_codec_enable_bandgap(codec, TABLA_BANDGAP_OFF);
+#ifdef CONFIG_SWITCH_FSA8008
+	mutex_destroy(&tabla->codec->card->mutex);
+#endif
 	if (tabla->mbhc_fw)
 		release_firmware(tabla->mbhc_fw);
 	for (i = 0; i < ARRAY_SIZE(tabla_dai); i++)

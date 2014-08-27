@@ -133,7 +133,10 @@ struct msg_id_map msgs_map[] = {
 	{MSG_STATS_HISTOGRAM, MSG_ID_STATS_IHIST},
 	{MSG_EPOCH1, MSG_ID_EPOCH1},
 	{MSG_EPOCH2, MSG_ID_EPOCH2},
-	{MSG_VFE_ERROR, MSG_ID_CAMIF_ERROR},
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+	//{MSG_VFE_ERROR, MSG_ID_CAMIF_ERROR},
+	{MSG_VFE_ERROR, MSG_ID_VFE_ERROR},
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
 	{MSG_SYNC_TIMER1_DONE, MSG_ID_SYNC_TIMER1_DONE},
 	{MSG_SYNC_TIMER2_DONE, MSG_ID_SYNC_TIMER2_DONE},
 	{MSG_ASYNC_TIMER1_DONE, MSG_ID_ASYNC_TIMER1_DONE},
@@ -751,6 +754,11 @@ static void vfe_7x_ops(void *driver_data, unsigned id, size_t len,
 				struct vfe_error_msg *VFE_ErrorMessageBuffer
 					= data;
 				ptr = data;
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim				
+				if (VFE_ErrorMessageBuffer->camif_error)
+					v4l2_subdev_notify(&vfe2x_ctrl->subdev,
+						NOTIFY_VFE_ERROR, (void *)NULL);
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
 				CDBG("Error: %x %x\n", ptr[0], ptr[1]);
 				CDBG("CAMIF_Error              = %d\n",
 					VFE_ErrorMessageBuffer->camif_error);

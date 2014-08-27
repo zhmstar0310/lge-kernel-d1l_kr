@@ -1075,10 +1075,9 @@ static char set_tear_off[2] = {0x34, 0x00};
 static struct dsi_cmd_desc dsi_tear_off_cmd = {
 	DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(set_tear_off), set_tear_off};
 
-static struct dcs_cmd_req cmdreq;
-
 void mipi_dsi_set_tear_on(struct msm_fb_data_type *mfd)
 {
+	struct dcs_cmd_req cmdreq;
 
 	cmdreq.cmds = &dsi_tear_on_cmd;
 	cmdreq.cmds_cnt = 1;
@@ -1091,6 +1090,8 @@ void mipi_dsi_set_tear_on(struct msm_fb_data_type *mfd)
 
 void mipi_dsi_set_tear_off(struct msm_fb_data_type *mfd)
 {
+	struct dcs_cmd_req cmdreq;
+
 	cmdreq.cmds = &dsi_tear_off_cmd;
 	cmdreq.cmds_cnt = 1;
 	cmdreq.flags = CMD_REQ_COMMIT;
@@ -1159,7 +1160,11 @@ int mipi_dsi_cmds_tx(struct dsi_buf *tp, struct dsi_cmd_desc *cmds, int cnt)
 		mipi_dsi_cmd_dma_add(tp, cm);
 		mipi_dsi_cmd_dma_tx(tp);
 		if (cm->wait)
+#ifdef CONFIG_MACH_LGE
+                     mdelay(cm->wait);
+#else
 			msleep(cm->wait);
+#endif
 		cm++;
 	}
 
@@ -1452,7 +1457,11 @@ int mipi_dsi_cmd_dma_tx(struct dsi_buf *tp)
 	wmb();
 	spin_unlock_irqrestore(&dsi_mdp_lock, flags);
 
+#ifdef CONFIG_MACH_LGE
+	wait_for_completion_timeout(&dsi_dma_comp, HZ);
+#else
 	wait_for_completion(&dsi_dma_comp);
+#endif
 
 	dma_unmap_single(&dsi_dev, tp->dmap, tp->len, DMA_TO_DEVICE);
 	tp->dmap = 0;
@@ -1575,8 +1584,8 @@ void mipi_dsi_cmdlist_rx(struct dcs_cmd_req *req)
 void mipi_dsi_cmdlist_commit(int from_mdp)
 {
 	struct dcs_cmd_req *req;
-	int video;
 	u32 dsi_ctrl;
+	int video;
 
 	mutex_lock(&cmd_mutex);
 	req = mipi_dsi_cmdlist_get();

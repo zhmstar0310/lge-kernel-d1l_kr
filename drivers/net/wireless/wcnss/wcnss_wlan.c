@@ -21,10 +21,15 @@
 #include <linux/workqueue.h>
 #include <linux/jiffies.h>
 #include <linux/gpio.h>
+#include <linux/io.h>
 #include <mach/peripheral-loader.h>
+#include <mach/msm_iomap.h> 
+#include <mach/msm_smd.h>
+#include <linux/clk.h>
+
 
 #define DEVICE "wcnss_wlan"
-#define VERSION "1.01"
+#define VERSION "1.01"  
 #define WCNSS_PIL_DEVICE "wcnss"
 
 /* module params */
@@ -32,6 +37,12 @@
 static int has_48mhz_xo = WCNSS_CONFIG_UNSPECIFIED;
 module_param(has_48mhz_xo, int, S_IWUSR | S_IRUGO);
 MODULE_PARM_DESC(has_48mhz_xo, "Is an external 48 MHz XO present");
+static DEFINE_SPINLOCK(reg_spinlock);
+
+#define MSM_RIVA_PHYS                0x03204000
+#define MSM_PRONTO_PHYS              0xfb21b000
+#define RIVA_SPARE_OFFSET             0x0b4
+#define RIVA_SUSPEND_BIT              BIT(24)
 
 static struct {
 	struct platform_device *pdev;
@@ -48,6 +59,7 @@ static struct {
 	void		(*tm_notify)(struct device *, int);
 	struct wcnss_wlan_config wlan_config;
 	struct delayed_work wcnss_work;
+   void __iomem *msm_wcnss_base;
 } *penv = NULL;
 
 static ssize_t wcnss_serial_number_show(struct device *dev,
@@ -106,6 +118,18 @@ static ssize_t wcnss_thermal_mitigation_store(struct device *dev,
 static DEVICE_ATTR(thermal_mitigation, S_IRUSR | S_IWUSR,
 	wcnss_thermal_mitigation_show, wcnss_thermal_mitigation_store);
 
+/* interface to reset Riva by sending the reset interrupt */	
+void wcnss_reset_intr(void)
+{
+//      if (wcnss_hardware_type() == WCNSS_RIVA_HW) {	
+        wmb();	
+        __raw_writel(1 << 24, MSM_APCS_GCC_BASE + 0x8);	
+//   } else {
+//     pr_err("%s: reset interrupt not supported\n", __func__);
+//	 }
+}
+EXPORT_SYMBOL(wcnss_reset_intr);
+						
 static int wcnss_create_sysfs(struct device *dev)
 {
 	int ret;
@@ -301,7 +325,67 @@ unsigned int wcnss_get_serial_number(void)
 	return 0;
 }
 EXPORT_SYMBOL(wcnss_get_serial_number);
+static int enable_wcnss_suspend_notify;
+static int enable_wcnss_suspend_notify_set(const char *val,	
+struct kernel_param *kp)
+{
+       int ret;
+       ret = param_set_int(val, kp);
+       if (ret)	
+       return ret;	
+       if (enable_wcnss_suspend_notify)	
+             pr_debug("Suspend notification activated for wcnss\n");	
+      return 0;	
+}	
+module_param_call(enable_wcnss_suspend_notify, 
+enable_wcnss_suspend_notify_set,param_get_int, &enable_wcnss_suspend_notify, 
+S_IRUGO | S_IWUSR);
 
+void wcnss_suspend_notify(void)
+{
+       void __iomem *pmu_spare_reg;
+       u32 reg = 0;
+       unsigned long flags;
+
+       if (!enable_wcnss_suspend_notify)
+              return;
+//       if (wcnss_hardware_type() == WCNSS_PRONTO_HW)
+//             return;
+       /* For Riva */
+
+       pmu_spare_reg = penv->msm_wcnss_base + RIVA_SPARE_OFFSET;	
+       spin_lock_irqsave(&reg_spinlock, flags);	
+       reg = readl_relaxed(pmu_spare_reg);	
+       reg |= RIVA_SUSPEND_BIT;	
+       writel_relaxed(reg, pmu_spare_reg);	
+       spin_unlock_irqrestore(&reg_spinlock, flags);	
+}	
+EXPORT_SYMBOL(wcnss_suspend_notify);	
+
+void wcnss_resume_notify(void)	
+{	
+       void __iomem *pmu_spare_reg;	
+       u32 reg = 0;	
+       unsigned long flags;	
+
+
+       if (!enable_wcnss_suspend_notify)	
+            return;
+
+//       if (wcnss_hardware_type() == WCNSS_PRONTO_HW)
+//            return;
+
+       /* For Riva */
+       pmu_spare_reg = penv->msm_wcnss_base + RIVA_SPARE_OFFSET;
+
+       spin_lock_irqsave(&reg_spinlock, flags);
+       reg = readl_relaxed(pmu_spare_reg);
+       reg &= ~RIVA_SUSPEND_BIT;
+       writel_relaxed(reg, pmu_spare_reg);
+       spin_unlock_irqrestore(&reg_spinlock, flags);
+}	
+
+EXPORT_SYMBOL(wcnss_resume_notify);
 static int wcnss_wlan_suspend(struct device *dev)
 {
 	if (penv && dev && (dev == &penv->pdev->dev) &&

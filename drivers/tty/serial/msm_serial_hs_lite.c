@@ -807,6 +807,17 @@ static void msm_hsl_set_termios(struct uart_port *port,
 	/* calculate and set baud rate */
 	baud = uart_get_baud_rate(port, termios, old, 300, 460800);
 
+/*                                                    
+                    
+                               
+                                                                        
+ */
+#ifdef CONFIG_LGE_IRDA
+	if(port->line == 2){
+		msm_hsl_write(port, 0x03, UARTDM_IRDA_ADDR);
+	}
+#endif
+/*                                                   */
 	msm_hsl_set_baud_rate(port, baud);
 
 	vid = UART_TO_MSM(port)->ver_id;

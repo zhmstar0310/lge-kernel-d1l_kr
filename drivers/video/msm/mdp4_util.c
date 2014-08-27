@@ -246,6 +246,14 @@ void mdp4_hw_init(void)
 	ulong bits;
 	uint32 clk_rate;
 
+#ifdef CONFIG_MACH_LGE
+	/*           
+                                                         
+                     
+                                    
+  */
+	MDP_OUTP(MDP_BASE + 0xE0000, 0);
+#endif
 	/* MDP cmd block enable */
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
 
@@ -356,6 +364,17 @@ void mdp4_clear_lcdc(void)
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
 }
 
+#ifdef CONFIG_LGE_LCD_UNDERRUN
+struct work_struct underrun_work;
+extern void get_msm_bus_info(struct work_struct *);
+
+void init_underrun_log(void)
+{
+	INIT_WORK(&underrun_work, get_msm_bus_info);
+}
+
+#endif
+
 irqreturn_t mdp4_isr(int irq, void *ptr)
 {
 	uint32 isr, mask, panel;
@@ -381,6 +400,9 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 	if (isr & INTR_PRIMARY_INTF_UDERRUN) {
 		pr_debug("%s: UNDERRUN -- primary\n", __func__);
 		mdp4_stat.intr_underrun_p++;
+#ifdef CONFIG_LGE_LCD_UNDERRUN
+		schedule_work(&underrun_work);
+#endif
 		/* When underun occurs mdp clear the histogram registers
 		that are set before in hw_init so restore them back so
 		that histogram works.*/
@@ -3215,6 +3237,19 @@ error:
 	return ret;
 }
 
+u32 mdp4_get_mixer_num(u32 panel_type)
+{
+	u32 mixer_num;
+	if ((panel_type == TV_PANEL) ||
+			(panel_type == DTV_PANEL))
+		mixer_num = MDP4_MIXER1;
+	else if (panel_type == WRITEBACK_PANEL) {
+		mixer_num = MDP4_MIXER2;
+	} else {
+		mixer_num = MDP4_MIXER0;
+	}
+	return mixer_num;
+}
 #define QSEED_TABLE_1_COUNT	2
 #define QSEED_TABLE_2_COUNT	1024
 

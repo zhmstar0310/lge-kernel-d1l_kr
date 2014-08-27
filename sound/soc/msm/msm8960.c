@@ -28,7 +28,16 @@
 #include "msm-pcm-routing.h"
 #include "../codecs/wcd9310.h"
 
+#ifdef CONFIG_LGE_AUDIO_TPA2028D
+	/* Add the I2C driver for Audio Amp, ehgrace.kim@lge.cim, 06/13/2011 */
+#include <sound/tpa2028d.h>
+#endif
 /* 8960 machine driver */
+
+#if defined(CONFIG_SWITCH_FSA8008)
+/*                                                                           */
+#include "../../../arch/arm/mach-msm/include/mach/board_lge.h"
+#endif
 
 #define PM8921_GPIO_BASE		NR_GPIO_IRQS
 #define PM8921_IRQ_BASE (NR_MSM_IRQS + NR_GPIO_IRQS)
@@ -66,8 +75,12 @@
 static u32 top_spk_pamp_gpio  = PM8921_GPIO_PM_TO_SYS(18);
 static u32 bottom_spk_pamp_gpio = PM8921_GPIO_PM_TO_SYS(19);
 static int msm8960_spk_control;
+#ifdef CONFIG_LGE_AUDIO_TPA2028D
+/*                                                     */
+#else
 static int msm8960_ext_bottom_spk_pamp;
 static int msm8960_ext_top_spk_pamp;
+#endif
 static int msm8960_slim_0_rx_ch = 1;
 static int msm8960_slim_0_tx_ch = 1;
 
@@ -94,7 +107,9 @@ MODULE_PARM_DESC(hs_detect_use_firmware, "Use firmware for headset detection");
 
 static int msm8960_enable_codec_ext_clk(struct snd_soc_codec *codec, int enable,
 					bool dapm);
+#ifndef CONFIG_SWITCH_FSA8008
 static bool msm8960_swap_gnd_mic(struct snd_soc_codec *codec);
+#endif
 
 static struct tabla_mbhc_config mbhc_cfg = {
 	.headset_jack = &hs_jack,
@@ -110,10 +125,15 @@ static struct tabla_mbhc_config mbhc_cfg = {
 	.swap_gnd_mic = NULL,
 };
 
+#ifndef CONFIG_SWITCH_FSA8008
 static u32 us_euro_sel_gpio = PM8921_GPIO_PM_TO_SYS(JACK_US_EURO_SEL_GPIO);
+#endif
 
 static struct mutex cdc_mclk_mutex;
 
+#ifdef CONFIG_LGE_AUDIO_TPA2028D
+/*                                                    */
+#else
 static void msm8960_enable_ext_spk_amp_gpio(u32 spk_amp_gpio)
 {
 	int ret = 0;
@@ -275,6 +295,7 @@ static void msm8960_ext_spk_power_amp_off(u32 spk)
 		return;
 	}
 }
+#endif
 
 static void msm8960_ext_control(struct snd_soc_codec *codec)
 {
@@ -283,6 +304,12 @@ static void msm8960_ext_control(struct snd_soc_codec *codec)
 	mutex_lock(&dapm->codec->mutex);
 
 	pr_debug("%s: msm8960_spk_control = %d", __func__, msm8960_spk_control);
+#if defined(CONFIG_LGE_AUDIO_TPA2028D)
+	if (msm8960_spk_control == MSM8960_SPK_ON)
+		snd_soc_dapm_enable_pin(dapm, "Ext Spk");
+	else
+		snd_soc_dapm_disable_pin(dapm, "Ext Spk");
+#else
 	if (msm8960_spk_control == MSM8960_SPK_ON) {
 		snd_soc_dapm_enable_pin(dapm, "Ext Spk Bottom Pos");
 		snd_soc_dapm_enable_pin(dapm, "Ext Spk Bottom Neg");
@@ -294,7 +321,7 @@ static void msm8960_ext_control(struct snd_soc_codec *codec)
 		snd_soc_dapm_disable_pin(dapm, "Ext Spk Top Pos");
 		snd_soc_dapm_disable_pin(dapm, "Ext Spk Top Neg");
 	}
-
+#endif
 	snd_soc_dapm_sync(dapm);
 	mutex_unlock(&dapm->codec->mutex);
 }
@@ -324,6 +351,15 @@ static int msm8960_spkramp_event(struct snd_soc_dapm_widget *w,
 {
 	pr_debug("%s() %x\n", __func__, SND_SOC_DAPM_EVENT_ON(event));
 
+#ifdef CONFIG_LGE_AUDIO_TPA2028D
+	/*                                                     */
+	printk(KERN_DEBUG "spk amp event");
+	if (SND_SOC_DAPM_EVENT_ON(event))
+		set_amp_gain(MSM8960_SPK_ON);
+	else
+		set_amp_gain(MSM8960_SPK_OFF);
+	return 0;
+#else
 	if (SND_SOC_DAPM_EVENT_ON(event)) {
 		if (!strncmp(w->name, "Ext Spk Bottom Pos", 18))
 			msm8960_ext_spk_power_amp_on(BOTTOM_SPK_AMP_POS);
@@ -359,6 +395,7 @@ static int msm8960_spkramp_event(struct snd_soc_dapm_widget *w,
 		}
 	}
 	return 0;
+#endif
 }
 
 static int msm8960_enable_codec_ext_clk(struct snd_soc_codec *codec, int enable,
@@ -368,6 +405,40 @@ static int msm8960_enable_codec_ext_clk(struct snd_soc_codec *codec, int enable,
 	pr_debug("%s: enable = %d\n", __func__, enable);
 
 	mutex_lock(&cdc_mclk_mutex);
+#ifdef CONFIG_SWITCH_FSA8008
+       if (enable == MCLK_ON_BANDGAP_ON) {
+		   clk_users++;
+		   pr_debug("%s: clk_users = %d\n", __func__, clk_users);
+		   if (clk_users == 1) {
+			   if (codec_clk) {
+				   clk_set_rate(codec_clk, TABLA_EXT_CLK_RATE);
+				   clk_prepare_enable(codec_clk);
+				   tabla_mclk_enable(codec, enable, dapm);
+			   } else {
+				   pr_err("%s: Error setting Tabla MCLK\n",
+						  __func__);
+				   clk_users--;
+				   r = -EINVAL;
+			   }
+		   }
+		} else if ((enable == MCLK_OFF_BANDGAP_OFF) ||
+			(enable == MCLK_OF_BANDGAP_ON)){
+		   pr_info("%s: clk_users = %d\n", __func__, clk_users);
+		   if (clk_users > 0) {
+			   clk_users--;
+			   pr_debug("%s: clk_users = %d\n", __func__, clk_users);
+			   if (clk_users == 0) {
+				   pr_debug("%s: disabling MCLK. clk_users = %d\n",
+						__func__, clk_users);
+				   tabla_mclk_enable(codec, enable, dapm);
+				   clk_disable_unprepare(codec_clk);
+			   }
+		   } else {
+			   pr_err("%s: Error releasing Tabla MCLK\n", __func__);
+			   r = -EINVAL;
+		   }
+	   }
+#else
 	if (enable) {
 		clk_users++;
 		pr_debug("%s: clk_users = %d\n", __func__, clk_users);
@@ -398,10 +469,12 @@ static int msm8960_enable_codec_ext_clk(struct snd_soc_codec *codec, int enable,
 			r = -EINVAL;
 		}
 	}
+#endif
 	mutex_unlock(&cdc_mclk_mutex);
 	return r;
 }
 
+#ifndef CONFIG_SWITCH_FSA8008
 static bool msm8960_swap_gnd_mic(struct snd_soc_codec *codec)
 {
 	int value = gpio_get_value_cansleep(us_euro_sel_gpio);
@@ -410,6 +483,7 @@ static bool msm8960_swap_gnd_mic(struct snd_soc_codec *codec)
 	gpio_set_value_cansleep(us_euro_sel_gpio, !value);
 	return true;
 }
+#endif
 
 static int msm8960_mclk_event(struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *kcontrol, int event)
@@ -430,13 +504,15 @@ static const struct snd_soc_dapm_widget msm8960_dapm_widgets[] = {
 	SND_SOC_DAPM_SUPPLY("MCLK",  SND_SOC_NOPM, 0, 0,
 	msm8960_mclk_event, SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 
+#ifdef CONFIG_LGE_AUDIO_TPA2028D
+	SND_SOC_DAPM_SPK("Ext Spk", msm8960_spkramp_event),
+#else
 	SND_SOC_DAPM_SPK("Ext Spk Bottom Pos", msm8960_spkramp_event),
 	SND_SOC_DAPM_SPK("Ext Spk Bottom Neg", msm8960_spkramp_event),
 
 	SND_SOC_DAPM_SPK("Ext Spk Top Pos", msm8960_spkramp_event),
 	SND_SOC_DAPM_SPK("Ext Spk Top Neg", msm8960_spkramp_event),
-	SND_SOC_DAPM_SPK("Ext Spk Top", msm8960_spkramp_event),
-
+#endif
 	SND_SOC_DAPM_MIC("Handset Mic", NULL),
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("Digital Mic1", NULL),
@@ -449,28 +525,47 @@ static const struct snd_soc_dapm_widget msm8960_dapm_widgets[] = {
 	SND_SOC_DAPM_MIC("Digital Mic4", NULL),
 	SND_SOC_DAPM_MIC("Digital Mic5", NULL),
 	SND_SOC_DAPM_MIC("Digital Mic6", NULL),
-
+#if defined(CONFIG_LGE_AUDIO)
+	SND_SOC_DAPM_MIC("Handset SubMic", NULL),
+#endif
 };
 
 static const struct snd_soc_dapm_route common_audio_map[] = {
 
 	{"RX_BIAS", NULL, "MCLK"},
 	{"LDO_H", NULL, "MCLK"},
-
+    {"HEADPHONE", NULL, "LDO_H"},
+#if defined(CONFIG_LGE_AUDIO_TPA2028D)
+	{"Ext Spk", NULL, "LINEOUT1"},
+#else
 	/* Speaker path */
 	{"Ext Spk Bottom Pos", NULL, "LINEOUT1"},
 	{"Ext Spk Bottom Neg", NULL, "LINEOUT3"},
 
 	{"Ext Spk Top Pos", NULL, "LINEOUT2"},
 	{"Ext Spk Top Neg", NULL, "LINEOUT4"},
-	{"Ext Spk Top", NULL, "LINEOUT5"},
+#endif
 
+#ifdef CONFIG_LGE_AUDIO
+	/* Microphone path */
+	{"AMIC1", NULL, "MIC BIAS1 External"},
+	{"MIC BIAS1 External", NULL, "Handset Mic"},
+#else
 	/* Microphone path */
 	{"AMIC1", NULL, "MIC BIAS1 Internal1"},
 	{"MIC BIAS1 Internal1", NULL, "Handset Mic"},
+#endif
 
+#ifdef CONFIG_SWITCH_FSA8008
+	{"AMIC2", NULL, "LDO_H"},
+	{"MIC BIAS2 External", NULL, "Headset Mic"},
+#else
+	/* Headset Mic */
 	{"AMIC2", NULL, "MIC BIAS2 External"},
 	{"MIC BIAS2 External", NULL, "Headset Mic"},
+#endif
+
+#ifndef CONFIG_LGE_AUDIO   //                      
 
 	/**
 	 * AMIC3 and AMIC4 inputs are connected to ANC microphones
@@ -537,8 +632,16 @@ static const struct snd_soc_dapm_route common_audio_map[] = {
 	 */
 	{"DMIC6", NULL, "MIC BIAS4 External"},
 	{"MIC BIAS4 External", NULL, "Digital Mic6"},
+#endif
 };
 
+#ifdef CONFIG_LGE_AUDIO
+	/* enable handset sub mic, ehgrace.kim@lge.cim, 08/15/2011 */
+static const struct snd_soc_dapm_route handset_submic_audio_map[] = {
+	{"AMIC3", NULL, "MIC BIAS3 External"},
+	{"MIC BIAS3 External", NULL, "Handset SubMic"},
+};
+#endif
 static const char *spk_function[] = {"Off", "On"};
 static const char *slim0_rx_ch_text[] = {"One", "Two"};
 static const char *slim0_tx_ch_text[] = {"One", "Two", "Three", "Four"};
@@ -882,6 +985,7 @@ static int msm8960_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	struct snd_soc_codec *codec = rtd->codec;
 	struct snd_soc_dapm_context *dapm = &codec->dapm;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+#ifndef CONFIG_SWITCH_FSA8008
 	struct pm_gpio jack_gpio_cfg = {
 		.direction = PM_GPIO_DIR_IN,
 		.pull = PM_GPIO_PULL_UP_1P5,
@@ -889,6 +993,7 @@ static int msm8960_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		.vin_sel = 2,
 		.inv_int_pol = 0,
 	};
+#endif
 
 	pr_debug("%s(), dev_name%s\n", __func__, dev_name(cpu_dai->dev));
 
@@ -903,10 +1008,19 @@ static int msm8960_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_add_routes(dapm, common_audio_map,
 		ARRAY_SIZE(common_audio_map));
 
+#ifdef CONFIG_LGE_AUDIO
+	snd_soc_dapm_add_routes(dapm, handset_submic_audio_map,
+		ARRAY_SIZE(handset_submic_audio_map));
+#endif
+
+#ifdef CONFIG_LGE_AUDIO_TPA2028D
+	snd_soc_dapm_enable_pin(dapm, "Ext Spk");
+#else
 	snd_soc_dapm_enable_pin(dapm, "Ext Spk Bottom Pos");
 	snd_soc_dapm_enable_pin(dapm, "Ext Spk Bottom Neg");
 	snd_soc_dapm_enable_pin(dapm, "Ext Spk Top Pos");
 	snd_soc_dapm_enable_pin(dapm, "Ext Spk Top Neg");
+#endif
 
 	snd_soc_dapm_sync(dapm);
 
@@ -928,6 +1042,14 @@ static int msm8960_audrx_init(struct snd_soc_pcm_runtime *rtd)
 
 	codec_clk = clk_get(cpu_dai->dev, "osr_clk");
 
+#ifdef CONFIG_SWITCH_FSA8008
+/*
+ * If using fsa8008 headset driver,
+ * disable the qualcomm configuration
+ * ehgrace.kim@lge.cim, 08/07/2011
+*/
+		tabla_register_mclk_call_back(codec, msm8960_enable_codec_ext_clk);
+#else /*MBHC*/
 	if (machine_is_msm8960_cdp())
 		mbhc_cfg.swap_gnd_mic = msm8960_swap_gnd_mic;
 
@@ -948,6 +1070,7 @@ static int msm8960_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	mbhc_cfg.read_fw_bin = hs_detect_use_firmware;
 
 	err = tabla_hs_detect(codec, &mbhc_cfg);
+#endif
 
 	return err;
 }
@@ -996,6 +1119,8 @@ static int msm8960_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	return 0;
 }
 
+/*                                                     */
+#ifdef CONFIG_SND_SOC_MSM_QDSP6_HDMI_AUDIO
 static int msm8960_hdmi_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 					struct snd_pcm_hw_params *params)
 {
@@ -1012,6 +1137,7 @@ static int msm8960_hdmi_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 
 	return 0;
 }
+#endif
 
 static int msm8960_btsco_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 					struct snd_pcm_hw_params *params)
@@ -1058,7 +1184,7 @@ static int msm8960_aux_pcm_get_gpios(void)
 	int ret = 0;
 
 	pr_debug("%s\n", __func__);
-
+#ifndef CONFIG_SWITCH_FSA8008
 	ret = gpio_request(GPIO_AUX_PCM_DOUT, "AUX PCM DOUT");
 	if (ret < 0) {
 		pr_err("%s: Failed to request gpio(%d): AUX PCM DOUT",
@@ -1085,9 +1211,10 @@ static int msm8960_aux_pcm_get_gpios(void)
 				__func__, GPIO_AUX_PCM_CLK);
 		goto fail_clk;
 	}
-
+#endif
 	return 0;
 
+#ifndef CONFIG_SWITCH_FSA8008
 fail_clk:
 	gpio_free(GPIO_AUX_PCM_SYNC);
 fail_sync:
@@ -1095,7 +1222,7 @@ fail_sync:
 fail_din:
 	gpio_free(GPIO_AUX_PCM_DOUT);
 fail_dout:
-
+#endif
 	return ret;
 }
 
@@ -1395,6 +1522,9 @@ static struct snd_soc_dai_link msm8960_dai_common[] = {
 		.be_id = MSM_BACKEND_DAI_INT_FM_TX,
 		.be_hw_params_fixup = msm8960_be_hw_params_fixup,
 	},
+
+/*                                                     */
+#ifdef CONFIG_SND_SOC_MSM_QDSP6_HDMI_AUDIO
 	/* HDMI BACK END DAI Link */
 	{
 		.name = LPASS_BE_HDMI,
@@ -1408,6 +1538,7 @@ static struct snd_soc_dai_link msm8960_dai_common[] = {
 		.be_hw_params_fixup = msm8960_hdmi_be_hw_params_fixup,
 		.ignore_pmdown_time = 1, /* this dainlink has playback support */
 	},
+#endif
 	/* Backend AFE DAI Links */
 	{
 		.name = LPASS_BE_AFE_PCM_RX,
@@ -1633,6 +1764,7 @@ static struct snd_soc_card snd_soc_card_msm8960 = {
 static struct platform_device *msm8960_snd_device;
 static struct platform_device *msm8960_snd_tabla1x_device;
 
+#ifndef CONFIG_SWITCH_FSA8008
 static int msm8960_configure_headset_mic_gpios(void)
 {
 	int ret;
@@ -1676,11 +1808,20 @@ static int msm8960_configure_headset_mic_gpios(void)
 
 	return 0;
 }
+#endif
+
 static void msm8960_free_headset_mic_gpios(void)
 {
 	if (msm8960_headset_gpios_configured) {
+#ifndef CONFIG_SWITCH_FSA8008
+/*
+ * If using fsa8008 headset driver,
+ * disable the qualcomm configuration
+ * ehgrace.kim@lge.cim, 08/07/2011
+ */
 		gpio_free(PM8921_GPIO_PM_TO_SYS(23));
 		gpio_free(us_euro_sel_gpio);
+#endif
 	}
 }
 
@@ -1739,11 +1880,20 @@ static int __init msm8960_audio_init(void)
 		return ret;
 	}
 
+#ifdef CONFIG_SWITCH_FSA8008
+/*
+ * If using fsa8008 headset driver,
+ * disable the qualcomm configuration
+ * ehgrace.kim@lge.cim, 08/07/2011
+*/
+	msm8960_headset_gpios_configured = 1;
+#else /*MBHC*/
 	if (msm8960_configure_headset_mic_gpios()) {
 		pr_err("%s Fail to configure headset mic gpios\n", __func__);
 		msm8960_headset_gpios_configured = 0;
 	} else
 		msm8960_headset_gpios_configured = 1;
+#endif
 
 	mutex_init(&cdc_mclk_mutex);
 	return ret;

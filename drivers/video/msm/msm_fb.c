@@ -49,6 +49,30 @@
 #include "mdp.h"
 #include "mdp4.h"
 
+/*           
+                                 
+                              
+ */
+#if defined (CONFIG_LGE_QC_LCDC_LUT)
+#include "lge_qlut.h"
+int g_qlut_change_by_kernel;
+EXPORT_SYMBOL(g_qlut_change_by_kernel);
+#endif
+
+#ifdef CONFIG_FB_MSM_LOGO
+#define INIT_IMAGE_FILE "/initlogo.rle"
+#if defined(CONFIG_MACH_LGE) && \
+	(defined(CONFIG_FB_MSM_DEFAULT_DEPTH_ARGB8888) ||\
+	 defined(CONFIG_FB_MSM_DEFAULT_DEPTH_RGBA8888))
+/*           
+                               
+                                   
+ */
+extern int load_888rle_image(char *filename);
+#else /*qct original code */
+extern int load_565rle_image(char *filename);
+#endif
+#endif
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MSM_FB_NUM	3
 #endif
@@ -111,6 +135,12 @@ static int mdp_bl_scale_config(struct msm_fb_data_type *mfd,
 						struct mdp_bl_scale_data *data);
 static void msm_fb_scale_bl(__u32 *bl_lvl);
 
+/*                              
+                                                        */
+#ifdef CONFIG_LGE_DISP_FBREAD
+static ssize_t msm_fb_read(struct fb_info *info, char __user *buf,
+		size_t count, loff_t *ppos);
+#endif
 #ifdef MSM_FB_ENABLE_DBGFS
 
 #define MSM_FB_MAX_DBGFS 1024
@@ -161,6 +191,16 @@ int msm_fb_cursor(struct fb_info *info, struct fb_cursor *cursor)
 
 static int msm_fb_resource_initialized;
 
+#if defined(CONFIG_MACH_LGE) && \
+	(defined(CONFIG_FB_MSM_DEFAULT_DEPTH_ARGB8888) ||\
+	 defined(CONFIG_FB_MSM_DEFAULT_DEPTH_RGBA8888))
+
+/*           
+                         
+                                   
+ */
+static int saved_backlight_level = -1;
+#endif
 #ifndef CONFIG_FB_BACKLIGHT
 static int lcd_backlight_registered;
 
@@ -169,7 +209,6 @@ static void msm_fb_set_bl_brightness(struct led_classdev *led_cdev,
 {
 	struct msm_fb_data_type *mfd = dev_get_drvdata(led_cdev->dev->parent);
 	int bl_lvl;
-
 	if (value > MAX_BACKLIGHT_BRIGHTNESS)
 		value = MAX_BACKLIGHT_BRIGHTNESS;
 
@@ -204,6 +243,7 @@ int msm_fb_detect_client(const char *name)
 #endif
 	if (!msm_fb_pdata)
 		return -EPERM;
+
 
 	len = strnlen(name, PANEL_NAME_MAX_LEN);
 	if (strnlen(msm_fb_pdata->prim_panel_name, PANEL_NAME_MAX_LEN)) {
@@ -791,6 +831,11 @@ static void msmfb_early_resume(struct early_suspend *h)
 	}
 
 	msm_fb_resume_sub(mfd);
+
+#if defined(CONFIG_LGE_QC_LCDC_LUT)
+	lge_set_qlut();
+#endif
+
 }
 #endif
 
@@ -831,14 +876,34 @@ void msm_fb_set_backlight(struct msm_fb_data_type *mfd, __u32 bkl_lvl)
 {
 	struct msm_fb_panel_data *pdata;
 	__u32 temp = bkl_lvl;
+
+#ifdef CONFIG_MACH_LGE
+	down(&mfd->sem);
+#endif
 	if (!mfd->panel_power_on || !bl_updated) {
 		unset_bl_level = bkl_lvl;
+#ifdef CONFIG_MACH_LGE
+		/*           
+                             
+                                                                 
+                                     
+   */
+		if (system_state != SYSTEM_BOOTING) {
+			up(&mfd->sem);
+			return;
+		}
+#else
 		return;
+#endif
 	} else {
 		unset_bl_level = 0;
 	}
+#ifdef CONFIG_MACH_LGE
+	up(&mfd->sem);
+#endif
+	if(temp != -1)
+		msm_fb_scale_bl(&temp);
 
-	msm_fb_scale_bl(&temp);
 	pdata = (struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
 
 	if ((pdata) && (pdata->set_backlight)) {
@@ -860,6 +925,10 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
 	struct msm_fb_panel_data *pdata = NULL;
+#ifdef CONFIG_LGE_LCD_TUNING
+	struct fb_info *fbi;
+	struct fb_var_screeninfo *var;
+#endif
 	int ret = 0;
 
 	if (!op_enable)
@@ -874,7 +943,28 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 	switch (blank_mode) {
 	case FB_BLANK_UNBLANK:
 		if (!mfd->panel_power_on) {
+	/*           
+                                   
+                                    
+  */
+#ifdef CONFIG_MACH_MSM8960_D1LV
+			msleep(5);
+#else
 			msleep(16);
+#endif
+#ifdef CONFIG_LGE_LCD_TUNING
+			if(mfd->index == 0){
+				fbi = mfd->fbi;
+				var = &fbi->var;
+				var->left_margin = msm_fb_pdata->porch[0];
+				var->right_margin = msm_fb_pdata->porch[1];
+				var->upper_margin = msm_fb_pdata->porch[3];
+				var->lower_margin = msm_fb_pdata->porch[4];
+
+				printk("%s, hbp = %d, hfp = %d, vbp = %d, vfp = %d\n",__func__,
+						var->left_margin, var->right_margin, var->upper_margin, var->lower_margin);
+			}
+#endif
 			ret = pdata->on(mfd->pdev);
 			if (ret == 0) {
 				mfd->panel_power_on = TRUE;
@@ -1085,7 +1175,13 @@ static struct fb_ops msm_fb_ops = {
 	.owner = THIS_MODULE,
 	.fb_open = msm_fb_open,
 	.fb_release = msm_fb_release,
+/*                              
+                                                        */
+#ifdef CONFIG_LGE_DISP_FBREAD
+    .fb_read = msm_fb_read,
+#else
 	.fb_read = NULL,
+#endif
 	.fb_write = NULL,
 	.fb_cursor = NULL,
 	.fb_check_var = msm_fb_check_var,	/* vinfo check */
@@ -1467,14 +1563,30 @@ static int msm_fb_register(struct msm_fb_data_type *mfd)
 	MSM_FB_INFO
 	    ("FrameBuffer[%d] %dx%d size=%d bytes is registered successfully!\n",
 	     mfd->index, fbi->var.xres, fbi->var.yres, fbi->fix.smem_len);
+#if defined(CONFIG_LGE_QC_LCDC_LUT)
+		lge_set_qlut();
+#endif
 
 #ifdef CONFIG_FB_MSM_LOGO
+#if defined(CONFIG_MACH_LGE) && \
+	(defined(CONFIG_FB_MSM_DEFAULT_DEPTH_ARGB8888) ||\
+	 defined(CONFIG_FB_MSM_DEFAULT_DEPTH_RGBA8888))
 	/* Flip buffer */
+	if (mfd->panel_info.type == MIPI_VIDEO_PANEL ||
+			mfd->panel_info.type == MIPI_CMD_PANEL){
+		msm_fb_open(mfd->fbi, 0);
+
+		if (load_888rle_image(INIT_IMAGE_FILE) < 0) /* Flip buffer */
+			printk(KERN_WARNING "fail to load 888 rle image\n");
+		msm_fb_pan_display(var, fbi);
+		msm_fb_set_backlight(mfd, saved_backlight_level);
+		}
+#else /* QCT orignal code */
 	if (!load_565rle_image(INIT_IMAGE_FILE, bf_supported))
 		;
 #endif
+#endif
 	ret = 0;
-
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	if (hdmi_prim_display || mfd->panel_info.type != DTV_PANEL) {
 		mfd->early_suspend.suspend = msmfb_early_suspend;
@@ -1762,7 +1874,6 @@ static int msm_fb_pan_display(struct fb_var_screeninfo *var,
 			return -EINVAL;
 		}
 	}
-
 	mdp_set_dma_pan_info(info, dirtyPtr,
 			     (var->activate == FB_ACTIVATE_VBL));
 	mdp_dma_pan_update(info);
@@ -1776,8 +1887,13 @@ static int msm_fb_pan_display(struct fb_var_screeninfo *var,
 			mfd->bl_level = unset_bl_level;
 			pdata->set_backlight(mfd);
 			bl_level_old = unset_bl_level;
+#ifndef CONFIG_MACH_LGE
 			up(&mfd->sem);
+#endif
 			bl_updated = 1;
+#ifdef CONFIG_MACH_LGE
+			up(&mfd->sem);
+#endif
 		}
 	}
 
@@ -2959,8 +3075,13 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 			mfd->bl_level = unset_bl_level;
 			pdata->set_backlight(mfd);
 			bl_level_old = unset_bl_level;
+#ifndef CONFIG_MACH_LGE
 			up(&mfd->sem);
+#endif
 			bl_updated = 1;
+#ifdef CONFIG_MACH_LGE
+			up(&mfd->sem);
+#endif
 		}
 	}
 
@@ -3287,7 +3408,24 @@ static int msmfb_handle_pp_ioctl(struct msm_fb_data_type *mfd,
 
 	return ret;
 }
-
+static int msmfb_handle_metadata_ioctl(struct msm_fb_data_type *mfd,
+				struct msmfb_metadata *metadata_ptr)
+{
+	int ret;
+	switch (metadata_ptr->op) {
+#ifdef CONFIG_FB_MSM_MDP40
+	case metadata_op_base_blend:
+		ret = mdp4_update_base_blend(mfd,
+						&metadata_ptr->data.blend_cfg);
+		break;
+#endif
+	default:
+		pr_warn("Unsupported request to MDP META IOCTL.\n");
+		ret = -EINVAL;
+		break;
+	}
+	return ret;
+}
 static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			unsigned long arg)
 {
@@ -3305,54 +3443,37 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 #endif
 	struct mdp_page_protection fb_page_protection;
 	struct msmfb_mdp_pp mdp_pp;
+	struct msmfb_metadata mdp_metadata;
 	int ret = 0;
 
 	switch (cmd) {
 #ifdef CONFIG_FB_MSM_OVERLAY
 	case MSMFB_OVERLAY_GET:
-		down(&msm_fb_ioctl_ppp_sem);
 		ret = msmfb_overlay_get(info, argp);
-		up(&msm_fb_ioctl_ppp_sem);
 		break;
 	case MSMFB_OVERLAY_SET:
-		down(&msm_fb_ioctl_ppp_sem);
 		ret = msmfb_overlay_set(info, argp);
-		up(&msm_fb_ioctl_ppp_sem);
 		break;
 	case MSMFB_OVERLAY_UNSET:
-		down(&msm_fb_ioctl_ppp_sem);
 		ret = msmfb_overlay_unset(info, argp);
-		up(&msm_fb_ioctl_ppp_sem);
 		break;
 	case MSMFB_OVERLAY_PLAY:
-		down(&msm_fb_ioctl_ppp_sem);
 		ret = msmfb_overlay_play(info, argp);
-		up(&msm_fb_ioctl_ppp_sem);
 		break;
 	case MSMFB_OVERLAY_PLAY_ENABLE:
-		down(&msm_fb_ioctl_ppp_sem);
 		ret = msmfb_overlay_play_enable(info, argp);
-		up(&msm_fb_ioctl_ppp_sem);
 		break;
 	case MSMFB_OVERLAY_PLAY_WAIT:
-		down(&msm_fb_ioctl_ppp_sem);
 		ret = msmfb_overlay_play_wait(info, argp);
-		up(&msm_fb_ioctl_ppp_sem);
 		break;
 	case MSMFB_OVERLAY_BLT:
-		down(&msm_fb_ioctl_ppp_sem);
 		ret = msmfb_overlay_blt(info, argp);
-		up(&msm_fb_ioctl_ppp_sem);
 		break;
 	case MSMFB_OVERLAY_3D:
-		down(&msm_fb_ioctl_ppp_sem);
 		ret = msmfb_overlay_3d_sbys(info, argp);
-		up(&msm_fb_ioctl_ppp_sem);
 		break;
 	case MSMFB_MIXER_INFO:
-		down(&msm_fb_ioctl_ppp_sem);
 		ret = msmfb_mixer_info(info, argp);
-		up(&msm_fb_ioctl_ppp_sem);
 		break;
 	case MSMFB_WRITEBACK_INIT:
 		ret = msmfb_overlay_ioctl_writeback_init(info);
@@ -3419,6 +3540,14 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 				__func__);
 			return ret;
 		}
+
+#ifdef CONFIG_LGE_BROADCAST_TDMB
+		if(csc_matrix.id == -1) {
+			memcpy(mdp_csc_convert[1].csc_mv, csc_matrix.csc_mv, sizeof(csc_matrix.csc_mv));
+			return ret;
+		}
+#endif /*                      */
+
 		down(&msm_fb_ioctl_ppp_sem);
 		msmfb_set_color_conv(&csc_matrix);
 		up(&msm_fb_ioctl_ppp_sem);
@@ -3602,6 +3731,12 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			return ret;
 
 		ret = msmfb_handle_pp_ioctl(mfd, &mdp_pp);
+		break;
+	case MSMFB_METADATA_SET:
+		ret = copy_from_user(&mdp_metadata, argp, sizeof(mdp_metadata));
+		if (ret)
+			return ret;
+		ret = msmfb_handle_metadata_ioctl(mfd, &mdp_metadata);
 		break;
 
 	default:
@@ -3886,5 +4021,108 @@ int msm_fb_v4l2_update(void *par,
 #endif
 }
 EXPORT_SYMBOL(msm_fb_v4l2_update);
+/*                              
+                                                         */
+#ifdef CONFIG_LGE_DISP_FBREAD
+static ssize_t
+msm_fb_read(struct fb_info *info, char __user *buf, size_t count, loff_t *ppos)
+{
+
+    unsigned long p = *ppos;
+    u32 *buffer;
+    u8 *dst;
+    u8 __iomem *src;
+    u8 r, g, b;
+    int c, i, cnt = 0, err = 0;
+    unsigned long total_size;
+    int line_length, xres, bpp;
+
+	total_size = info->screen_size;
+
+    if (total_size == 0)
+        total_size = info->fix.smem_len;
+
+    if (p >= total_size)
+		return 0;
+
+	if (count >= total_size)
+        count = total_size;
+
+	if (count + p > total_size)
+		count = total_size - p;
+
+	buffer = kmalloc((count > PAGE_SIZE) ? PAGE_SIZE : count,
+			GFP_KERNEL);
+
+	if (!buffer)
+		return -ENOMEM;
+
+    src = (u8 __iomem *) (info->screen_base + p);
+
+    xres = info->var.xres;
+    line_length = ALIGN(xres, 32);
+
+    bpp = info->var.bits_per_pixel/8;
+
+    for (i = 0; i < count; i += 4){
+
+		c = 4;
+		r = fb_readb(src++);
+		g = fb_readb(src++);
+		b = fb_readb(src++);
+		src++;
+
+		*ppos += c;
+
+		if ((p+i)%(line_length*bpp) >= xres*bpp)
+			continue;
+
+		dst = (u8 *)buffer;
+		*dst++ = r;
+		*dst++ = g;
+		*dst++ = b;
+		*dst++ = 0xff;
+
+		if (copy_to_user(buf, buffer, c)) {
+			err = -EFAULT;
+			break;
+		}
+
+		cnt += c;
+		buf += c;
+	}
+
+    kfree(buffer);
+
+    return (err) ? err : cnt;
+}
+#endif
+
+#if defined(CONFIG_LGE_QC_LCDC_LUT)
+int lge_set_qlut(void)
+{
+	struct fb_cmap cmap;
+	int ret = 0;
+
+	cmap.start	= 0;
+	cmap.len	= 256;
+	cmap.transp	= 0;
+	cmap.red	= NULL;
+	cmap.green	= NULL;
+	cmap.blue	= NULL;
+
+	mutex_lock(&msm_fb_ioctl_lut_sem);
+		g_qlut_change_by_kernel = 1;
+		ret = msm_fb_set_lut(&cmap, fbi_list[0]);
+		g_qlut_change_by_kernel = 0;
+	mutex_unlock(&msm_fb_ioctl_lut_sem);
+
+	if(ret)
+		printk(KERN_ERR "lge_set_initial_lut faild : %d\n", ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(lge_set_qlut);
+#endif
 
 module_init(msm_fb_init);

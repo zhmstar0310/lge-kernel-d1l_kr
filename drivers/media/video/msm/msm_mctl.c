@@ -728,6 +728,8 @@ static int msm_mctl_release(struct msm_cam_media_controller *p_mctl)
 
 	v4l2_subdev_call(p_mctl->sensor_sdev, core, s_power, 0);
 
+	p_mctl->hardware_running = 0; //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
+
 	pm_qos_update_request(&p_mctl->idle_pm_qos, PM_QOS_DEFAULT_VALUE);
 	return rc;
 }

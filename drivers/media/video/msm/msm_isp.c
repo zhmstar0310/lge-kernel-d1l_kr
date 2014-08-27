@@ -184,6 +184,7 @@ static int msm_isp_notify_VFE_BUF_EVT(struct v4l2_subdev *sd, void *arg)
 						__func__, vfe_id);
 		msm_mctl_reserve_free_buf(pmctl, NULL,
 					image_mode, &free_buf);
+		//pr_err("%s ping y = 0x%x, cbcr = 0x%x\n", __func__, free_buf.ch_paddr[0], free_buf.ch_paddr[1]); //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 		cfgcmd.cmd_type = CMD_CONFIG_PING_ADDR;
 		cfgcmd.value = &vfe_id;
 		vfe_params.vfe_cfg = &cfgcmd;
@@ -191,6 +192,7 @@ static int msm_isp_notify_VFE_BUF_EVT(struct v4l2_subdev *sd, void *arg)
 		rc = v4l2_subdev_call(sd, core, ioctl, 0, &vfe_params);
 		msm_mctl_reserve_free_buf(pmctl, NULL,
 					image_mode, &free_buf);
+		//pr_err("%s pong y = 0x%x, cbcr = 0x%x\n", __func__, free_buf.ch_paddr[0], free_buf.ch_paddr[1]); //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 		cfgcmd.cmd_type = CMD_CONFIG_PONG_ADDR;
 		cfgcmd.value = &vfe_id;
 		vfe_params.vfe_cfg = &cfgcmd;
@@ -249,6 +251,7 @@ static int msm_isp_notify_VFE_BUF_EVT(struct v4l2_subdev *sd, void *arg)
 						__func__, vfe_id);
 		msm_mctl_reserve_free_buf(pmctl, NULL,
 					image_mode, &free_buf);
+		//pr_err("%s free y = 0x%x, cbcr = 0x%x\n", __func__, free_buf.ch_paddr[0], free_buf.ch_paddr[1]);  //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 		cfgcmd.cmd_type = CMD_CONFIG_FREE_BUF_ADDR;
 		cfgcmd.value = &vfe_id;
 		vfe_params.vfe_cfg = &cfgcmd;

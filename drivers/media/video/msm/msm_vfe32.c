@@ -215,6 +215,19 @@ static struct vfe32_cmd_type vfe32_cmd[] = {
 		{VFE_CMD_GET_RGB_G_TABLE},
 		{VFE_CMD_GET_LA_TABLE},
 		{VFE_CMD_DEMOSAICV3_UPDATE},
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+		{VFE_CMD_ACTIVE_REGION_CFG},
+		{VFE_CMD_COLOR_PROCESSING_CONFIG},
+		{VFE_CMD_STATS_WB_AEC_CONFIG},
+		{VFE_CMD_STATS_WB_AEC_UPDATE},
+		{VFE_CMD_Y_GAMMA_CONFIG},
+		{VFE_CMD_SCALE_OUTPUT1_CONFIG},
+		{VFE_CMD_SCALE_OUTPUT2_CONFIG},
+		{VFE_CMD_CAPTURE_RAW},
+		{VFE_CMD_STOP_LIVESHOT},
+		{VFE_CMD_RECONFIG_VFE},
+		{VFE_CMD_STOP_RECORDING_DONE},
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
 };
 
 uint32_t vfe32_AXI_WM_CFG[] = {
@@ -357,6 +370,19 @@ static const char * const vfe32_general_cmd[] = {
 	"GET_RGB_G_TABLE",
 	"GET_LA_TABLE",
 	"DEMOSAICV3_UPDATE",
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+	"VFE_CMD_ACTIVE_REGION_CFG",
+	"VFE_CMD_COLOR_PROCESSING_CONFIG",
+	"VFE_CMD_STATS_WB_AEC_CONFIG",
+	"VFE_CMD_STATS_WB_AEC_UPDATE",
+	"VFE_CMD_Y_GAMMA_CONFIG",
+	"VFE_CMD_SCALE_OUTPUT1_CONFIG",
+	"VFE_CMD_SCALE_OUTPUT2_CONFIG",
+	"VFE_CMD_CAPTURE_RAW",
+	"VFE_CMD_STOP_LIVESHOT",
+	"VFE_CMD_RECONFIG_VFE",
+	"VFE_CMD_STOP_RECORDING_DONE",
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
 };
 
 static void vfe32_stop(void)
@@ -717,13 +743,14 @@ static uint32_t vfe_stats_cs_buf_init(struct vfe_cmd_stats_buf *in)
 	return 0;
 }
 
-static void vfe32_start_common(void)
+static void vfe32_start_common(struct msm_cam_media_controller *pmctl) //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 {
 	uint32_t irq_mask = 0x00E00021, irq_mask1, reg_update;
 	uint16_t vfe_operation_mode =
 		vfe32_ctrl->operation_mode & ~(VFE_OUTPUTS_RDI0|
 			VFE_OUTPUTS_RDI1);
 	vfe32_ctrl->start_ack_pending = TRUE;
+	pmctl->hardware_running = 1; //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 	CDBG("VFE opertaion mode = 0x%x, output mode = 0x%x\n",
 		vfe32_ctrl->operation_mode, vfe32_ctrl->outpath.output_mode);
 	if (vfe32_ctrl->stats_comp)
@@ -776,14 +803,20 @@ static int vfe32_start_recording(struct msm_cam_media_controller *pmctl)
 	return 0;
 }
 
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
 static int vfe32_stop_recording(struct msm_cam_media_controller *pmctl)
 {
 	vfe32_ctrl->recording_state = VFE_STATE_STOP_REQUESTED;
 	msm_camera_io_w_mb(1, vfe32_ctrl->vfebase + VFE_REG_UPDATE_CMD);
-	msm_camio_bus_scale_cfg(
-		pmctl->sdata->pdata->cam_bus_scale_table, S_PREVIEW);
 	return 0;
 }
+
+static void vfe32_stop_recording_done(struct msm_cam_media_controller *pmctl)
+{	
+	msm_camio_bus_scale_cfg(
+		pmctl->sdata->pdata->cam_bus_scale_table, S_PREVIEW);
+}
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
 
 static void vfe32_start_liveshot(struct msm_cam_media_controller *pmctl)
 {
@@ -862,7 +895,7 @@ static int vfe32_zsl(struct msm_cam_media_controller *pmctl)
 	}
 
 	msm_camera_io_w(irq_comp_mask, vfe32_ctrl->vfebase + VFE_IRQ_COMP_MASK);
-	vfe32_start_common();
+	vfe32_start_common(pmctl); //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 	msm_camio_bus_scale_cfg(
 		pmctl->sdata->pdata->cam_bus_scale_table, S_ZSL);
 
@@ -891,7 +924,7 @@ static int vfe32_capture_raw(
 	msm_camera_io_w(irq_comp_mask, vfe32_ctrl->vfebase + VFE_IRQ_COMP_MASK);
 	msm_camio_bus_scale_cfg(
 		pmctl->sdata->pdata->cam_bus_scale_table, S_CAPTURE);
-	vfe32_start_common();
+	vfe32_start_common(pmctl); //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 	return 0;
 }
 
@@ -952,7 +985,7 @@ static int vfe32_capture(
 	msm_camio_bus_scale_cfg(
 		pmctl->sdata->pdata->cam_bus_scale_table, S_CAPTURE);
 
-	vfe32_start_common();
+	vfe32_start_common(pmctl); //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 	/* for debug */
 	msm_camera_io_w(1, vfe32_ctrl->vfebase + 0x18C);
 	msm_camera_io_w(1, vfe32_ctrl->vfebase + 0x188);
@@ -1054,7 +1087,7 @@ static int vfe32_start(struct msm_cam_media_controller *pmctl)
 
 	msm_camio_bus_scale_cfg(
 		pmctl->sdata->pdata->cam_bus_scale_table, S_PREVIEW);
-	vfe32_start_common();
+	vfe32_start_common(pmctl); //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 	return 0;
 }
 
@@ -1350,6 +1383,7 @@ static int vfe32_proc_general(
 		pr_info("vfe32_proc_general: cmdID = %s\n",
 			vfe32_general_cmd[cmd->id]);
 		vfe32_reset();
+		pmctl->hardware_running = 0; //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 		break;
 	case VFE_CMD_START:
 		pr_info("vfe32_proc_general: cmdID = %s\n",
@@ -1475,6 +1509,13 @@ static int vfe32_proc_general(
 			vfe32_general_cmd[cmd->id]);
 		rc = vfe32_stop_recording(pmctl);
 		break;
+
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+	case VFE_CMD_STOP_RECORDING_DONE:
+		vfe32_stop_recording_done(pmctl);
+		break;
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+
 	case VFE_CMD_OPERATION_CFG: {
 		if (cmd->length != V32_OPERATION_CFG_LEN) {
 			rc = -EINVAL;
@@ -2283,6 +2324,7 @@ static int vfe32_proc_general(
 		pr_info("vfe32_proc_general: cmdID = %s\n",
 			vfe32_general_cmd[cmd->id]);
 		vfe32_stop();
+		pmctl->hardware_running = 0; //QCT patch, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-31, freeso.kim
 		break;
 
 	case VFE_CMD_SYNC_TIMER_SETTING:
@@ -2999,9 +3041,16 @@ static void vfe32_process_error_irq(uint32_t errStatus)
 		pr_err("vfe32_irq: camif errors\n");
 		reg_value = msm_camera_io_r(
 				vfe32_ctrl->vfebase + VFE_CAMIF_STATUS);
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim		
+		v4l2_subdev_notify(&vfe32_ctrl->subdev,
+                       NOTIFY_VFE_ERROR, (void *)NULL);
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim		
 		pr_err("camifStatus  = 0x%x\n", reg_value);
-		vfe32_send_isp_msg(vfe32_ctrl, MSG_ID_CAMIF_ERROR);
-	}
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim		
+		//vfe32_send_isp_msg(vfe32_ctrl, MSG_ID_CAMIF_ERROR);
+		vfe32_send_isp_msg(vfe32_ctrl, MSG_ID_VFE_ERROR);
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+}
 
 	if (errStatus & VFE32_IMASK_BHIST_OVWR)
 		pr_err("vfe32_irq: stats bhist overwrite\n");
@@ -3072,6 +3121,15 @@ static void vfe32_process_error_irq(uint32_t errStatus)
 
 	if (errStatus & VFE32_IMASK_AXI_ERROR)
 		pr_err("vfe32_irq: axi error\n");
+
+//QCT patch S, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+	if (errStatus & VFE32_IMASK_BUS_OVFL_ERROR) {
+		v4l2_subdev_notify(&vfe32_ctrl->subdev,
+			NOTIFY_VFE_ERROR, (void *)NULL);
+		vfe32_send_isp_msg(vfe32_ctrl, MSG_ID_VFE_ERROR);
+	}
+//QCT patch E, Fix_IOMMU_and_VFE_bus_overflow, 2012-10-20, freeso.kim
+	
 }
 
 static void vfe_send_outmsg(struct v4l2_subdev *sd, uint8_t msgid,

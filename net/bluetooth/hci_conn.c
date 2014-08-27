@@ -46,6 +46,12 @@
 #include <net/bluetooth/hci_core.h>
 #include <net/bluetooth/l2cap.h>
 
+// +s LGBT_COMMON_PATCH_00962598 - Change lock type to spin lock
+#ifndef FALSE
+#define FALSE 0
+#define TRUE (!FALSE)
+#endif
+// +e LGBT_COMMON_PATCH_00962598 - Change lock type to spin lock
 struct hci_conn *hci_le_connect(struct hci_dev *hdev, __u16 pkt_type,
 				bdaddr_t *dst, __u8 sec_level, __u8 auth_type,
 				struct bt_le_params *le_params)
@@ -450,6 +456,10 @@ struct hci_conn *hci_conn_add(struct hci_dev *hdev, int type,
 
 	conn->power_save = 1;
 	conn->disc_timeout = HCI_DISCONN_TIMEOUT;
+// +s LGBT_COMMON_PATCH_00962598 - Change lock type to spin lock
+	conn->conn_valid = TRUE;
+	spin_lock_init(&conn->lock);
+// +e LGBT_COMMON_PATCH_00962598 - Change lock type to spin lock
 	wake_lock_init(&conn->idle_lock, WAKE_LOCK_SUSPEND, "bt_idle");
 
 	switch (type) {
@@ -521,6 +531,12 @@ int hci_conn_del(struct hci_conn *conn)
 	struct hci_dev *hdev = conn->hdev;
 
 	BT_DBG("%s conn %p handle %d", hdev->name, conn, conn->handle);
+
+// +s LGBT_COMMON_PATCH_00962598 - Change lock type to spin lock
+	spin_lock_bh(&conn->lock);
+	conn->conn_valid = FALSE; /* conn data is being released */
+	spin_unlock_bh(&conn->lock);
+// +e LGBT_COMMON_PATCH_00962598 - Change lock type to spin lock
 
 	/* Make sure no timers are running */
 	del_timer(&conn->idle_timer);
@@ -776,8 +792,12 @@ struct hci_conn *hci_connect(struct hci_dev *hdev, int type,
 	if (acl->state == BT_CONNECTED &&
 			(sco->state == BT_OPEN || sco->state == BT_CLOSED)) {
 		acl->power_save = 1;
+// +s LGBT_COMMON_FUNCTION_NO_SNIFF_WHEN_OPEN_SCO
+		hci_conn_enter_active_mode_no_timer(acl);
+/* Google Original
 		hci_conn_enter_active_mode(acl, 1);
-
+*/
+// +e LGBT_COMMON_FUNCTION_NO_SNIFF_WHEN_OPEN_SCO
 		if (test_bit(HCI_CONN_MODE_CHANGE_PEND, &acl->pend)) {
 			/* defer SCO setup until mode change completed */
 			set_bit(HCI_CONN_SCO_SETUP_PEND, &acl->pend);
@@ -969,12 +989,48 @@ void hci_conn_enter_active_mode(struct hci_conn *conn, __u8 force_active)
 	}
 
 timer:
+// +s LGBT_COMMON_FUNCTION_NO_SNIFF_WHEN_OPEN_SCO
+	BT_DBG("sco_last_tx : %ld, sco_num : %d", hdev->sco_last_tx, hdev->conn_hash.sco_num);
+	if(hdev->conn_hash.sco_num && conn->mode!= HCI_CM_SNIFF){
+		BT_DBG("Don't need timer when open sco");
+		del_timer(&conn->idle_timer);
+		return;
+	}
+// +e LGBT_COMMON_FUNCTION_NO_SNIFF_WHEN_OPEN_SCO
+
 	if (hdev->idle_timeout > 0) {
-		mod_timer(&conn->idle_timer,
+// +s LGBT_COMMON_PATCH_00962598 - Change lock type to spin lock
+		spin_lock_bh(&conn->lock);
+		if (conn->conn_valid) {
+			mod_timer(&conn->idle_timer,
 			jiffies + msecs_to_jiffies(hdev->idle_timeout));
-		wake_lock(&conn->idle_lock);
+			wake_lock(&conn->idle_lock);
+		}
+		spin_unlock_bh(&conn->lock);
+// +e LGBT_COMMON_PATCH_00962598 - Change lock type to spin lock
 	}
 }
+// +s LGBT_COMMON_FUNCTION_NO_SNIFF_WHEN_OPEN_SCO
+void hci_conn_enter_active_mode_no_timer(struct hci_conn *conn)
+{
+	struct hci_dev *hdev = conn->hdev;
+
+	BT_DBG("conn %p mode %d", conn, conn->mode);
+	BT_DBG("sco_last_tx : %ld, sco_num : %d", hdev->sco_last_tx, hdev->conn_hash.sco_num);
+
+	if (test_bit(HCI_RAW, &hdev->flags))
+		return;
+	else if (conn->mode != HCI_CM_SNIFF)
+		return;
+
+	if (!test_and_set_bit(HCI_CONN_MODE_CHANGE_PEND, &conn->pend)) {
+		struct hci_cp_exit_sniff_mode cp;
+		cp.handle = cpu_to_le16(conn->handle);
+		del_timer(&conn->idle_timer);
+		hci_send_cmd(hdev, HCI_OP_EXIT_SNIFF_MODE, sizeof(cp), &cp);
+	}
+}
+// +e LGBT_COMMON_FUNCTION_NO_SNIFF_WHEN_OPEN_SCO
 
 static inline void hci_conn_stop_rssi_timer(struct hci_conn *conn)
 {

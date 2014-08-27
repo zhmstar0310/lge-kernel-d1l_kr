@@ -1995,8 +1995,15 @@ void mgmt_inquiry_complete_evt(u16 index, u8 status)
 		err = hci_send_cmd(hdev, HCI_OP_LE_SET_SCAN_ENABLE,
 						sizeof(le_cp), &le_cp);
 		if (err >= 0) {
-			mod_timer(&hdev->disco_le_timer, jiffies +
-				msecs_to_jiffies(hdev->disco_int_phase * 1000));
+//                                                                            
+// Do not allocate too much time on BTLE scan. Use fixed 5 seconds. 
+//			mod_timer(&hdev->disco_le_timer, jiffies +
+//				msecs_to_jiffies(hdev->disco_int_phase * 1000));
+// +s LGBT_COMMON_FUNCTION_SEARCH_PERFORMANCE INQUIRY_5sec_SCAN_LE_2SEC_AND_NAME_REQ
+			mod_timer(&hdev->disco_le_timer, jiffies + msecs_to_jiffies(2000));
+// +e LGBT_COMMON_FUNCTION_SEARCH_PERFORMANCE INQUIRY_5sec_SCAN_LE_2SEC_AND_NAME_REQ
+//			mod_timer(&hdev->disco_le_timer, jiffies + msecs_to_jiffies(5000));
+// +e
 			hdev->disco_state = SCAN_LE;
 		} else
 			hdev->disco_state = SCAN_IDLE;
@@ -2075,9 +2082,14 @@ void mgmt_disco_le_timeout(unsigned long data)
 	/* re-start BR scan */
 		if (hdev->disco_state != SCAN_IDLE) {
 			struct hci_cp_inquiry cp = {{0x33, 0x8b, 0x9e}, 4, 0};
+//                                                                            
+/*
 			hdev->disco_int_phase *= 2;
 			hdev->disco_int_count = 0;
 			cp.num_rsp = (u8) hdev->disco_int_phase;
+*/
+			cp.num_rsp = 0;
+// +e
 			hci_send_cmd(hdev, HCI_OP_INQUIRY, sizeof(cp), &cp);
 			hdev->disco_state = SCAN_BR;
 		}
@@ -2118,7 +2130,10 @@ static int start_discovery(struct sock *sk, u16 index)
 		struct hci_cp_le_set_scan_parameters le_cp;
 
 		/* Shorten BR scan params */
-		cp.num_rsp = 1;
+//                                                                            
+//		cp.num_rsp = 1;
+        cp.num_rsp = 0;
+// +e
 		cp.length /= 2;
 
 		/* Setup LE scan params */
@@ -2145,13 +2160,28 @@ static int start_discovery(struct sock *sk, u16 index)
 		if (!cmd)
 			mgmt_pending_add(sk, MGMT_OP_STOP_DISCOVERY, index,
 								NULL, 0);
+//                                                                            
+/*
 		hdev->disco_int_phase = 1;
 		hdev->disco_int_count = 0;
+*/
+// -e
 		hdev->disco_state = SCAN_BR;
 		del_timer(&hdev->disco_le_timer);
 		del_timer(&hdev->disco_timer);
+		//                                                                               
+		// increase discovery time from 20 sec to 50 sec.
+// +s LGBT_COMMON_FUNCTION_SEARCH_PERFORMANCE INQUIRY_5sec_SCAN_LE_2SEC_AND_NAME_REQ		
+		mod_timer(&hdev->disco_timer,
+			jiffies + msecs_to_jiffies(7000));	
+// +e LGBT_COMMON_FUNCTION_SEARCH_PERFORMANCE INQUIRY_5sec_SCAN_LE_2SEC_AND_NAME_REQ
+//		mod_timer(&hdev->disco_timer,
+//			jiffies + msecs_to_jiffies(50000));	
+		/* qct original
 		mod_timer(&hdev->disco_timer,
 				jiffies + msecs_to_jiffies(20000));
+		*/
+		// +e
 	} else
 		hdev->disco_state = SCAN_BR;
 
@@ -2992,7 +3022,9 @@ int mgmt_device_found(u16 index, bdaddr_t *bdaddr, u8 type, u8 le,
 			u8 *dev_class, s8 rssi, u8 eir_len, u8 *eir)
 {
 	struct mgmt_ev_device_found ev;
-	struct hci_dev *hdev;
+//                                                                            
+//	struct hci_dev *hdev;
+// -e
 	int err;
 
 	BT_DBG("le: %d", le);
@@ -3015,6 +3047,8 @@ int mgmt_device_found(u16 index, bdaddr_t *bdaddr, u8 type, u8 le,
 	if (err < 0)
 		return err;
 
+//                                                                            
+/* qct original
 	hdev = hci_dev_get(index);
 
 	if (!hdev)
@@ -3026,17 +3060,17 @@ int mgmt_device_found(u16 index, bdaddr_t *bdaddr, u8 type, u8 le,
 	hdev->disco_int_count++;
 
 	if (hdev->disco_int_count >= hdev->disco_int_phase) {
-		/* Inquiry scan for General Discovery LAP */
+		// Inquiry scan for General Discovery LAP 
 		struct hci_cp_inquiry cp = {{0x33, 0x8b, 0x9e}, 4, 0};
 		struct hci_cp_le_set_scan_enable le_cp = {0, 0};
 
 		hdev->disco_int_phase *= 2;
 		hdev->disco_int_count = 0;
 		if (hdev->disco_state == SCAN_LE) {
-			/* cancel LE scan */
+			// cancel LE scan
 			hci_send_cmd(hdev, HCI_OP_LE_SET_SCAN_ENABLE,
 					sizeof(le_cp), &le_cp);
-			/* start BR scan */
+			// start BR scan
 			cp.num_rsp = (u8) hdev->disco_int_phase;
 			hci_send_cmd(hdev, HCI_OP_INQUIRY,
 					sizeof(cp), &cp);
@@ -3047,6 +3081,8 @@ int mgmt_device_found(u16 index, bdaddr_t *bdaddr, u8 type, u8 le,
 
 done:
 	hci_dev_put(hdev);
+*/
+// -e
 	return 0;
 }
 

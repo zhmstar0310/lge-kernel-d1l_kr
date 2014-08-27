@@ -155,6 +155,7 @@ ep_matches (
 
 	case USB_ENDPOINT_XFER_ISOC:
 		/* ISO:  limit 1023 bytes full speed, 1024 high/super speed */
+		pr_info("ep_matches: ep->maxpacket: %d , desc_max: %d\n", ep->maxpacket, max);
 		if (ep->maxpacket < max)
 			return 0;
 		if (!gadget_is_dualspeed(gadget) && max > 1023)
